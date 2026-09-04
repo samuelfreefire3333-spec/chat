@@ -1,0 +1,334 @@
+<!DOCTYPE html> 
+<html lang="pt-BR" data-exige-login="sim"> 
+<head>     
+    <meta charset="UTF-8">     
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">          
+    
+<!-- 👑 CONECTANDO AO SEU CSS MESTRE -->
+    <link rel="stylesheet" href="style.css">
+
+    <script src="tema.js"></script>
+<title>Mensagens - Sinex Chat</title>
+    <link rel="manifest" href="manifest.json">          
+    
+    <!-- ESTILOS EXCLUSIVOS DESTA TELA (O Resto vem do style.css) -->
+    <style>         
+        /* Inbox Panel */         
+        .inbox-panel {             
+            width: 405px;             
+            flex: 0 0 405px;             
+            display: flex;             
+            flex-direction: column;             
+            background: var(--bg-panel);             
+            border-right: 1px solid var(--border-color);             
+            position: relative;             
+            z-index: 5;         
+        }         
+        .inbox-header {             
+            display: flex;             
+            align-items: center;             
+            justify-content: space-between;             
+            height: 86px;             
+            padding: 0 25px;             
+            border-bottom: 1px solid var(--border-color);         
+        }         
+        .inbox-header h1 {             
+            font-size: 19px;             
+            font-weight: 700;             
+            letter-spacing: -.35px;             
+            display: flex;             
+            align-items: center;             
+            gap: 7px;             
+            cursor: pointer;         
+        }         
+        .inbox-header h1 svg {             
+            width: 15px;             
+            height: 15px;             
+            opacity: .7;         
+        }         
+        .inbox-header .icon-edit {             
+            width: 22px;             
+            height: 22px;             
+            color: var(--text-sec);             
+            cursor: pointer;             
+            transition: .2s ease;         
+        }         
+        .inbox-header .icon-edit:hover {             
+            color: var(--primary-accent);             
+        }         
+
+        /* Lista de Contatos */         
+        .messages-title {             
+            display: flex;             
+            justify-content: space-between;             
+            align-items: center;             
+            padding: 18px 25px 11px;             
+            font-size: 15px;             
+            font-weight: 700;             
+            letter-spacing: -.1px;         
+        }         
+        .messages-title .pedidos {             
+            color: var(--primary-accent);             
+            font-size: 12px;             
+            font-weight: 700;             
+            cursor: pointer;             
+            text-transform: uppercase;             
+            letter-spacing: .35px;         
+        }         
+        .chat-list {             
+            flex: 1;             
+            overflow-y: auto;             
+            padding: 3px 8px 18px;             
+            scrollbar-width: thin;             
+            scrollbar-color: var(--border-color) transparent;         
+        }         
+        .chat-list::-webkit-scrollbar { width: 5px; }         
+        .chat-list::-webkit-scrollbar-thumb {             
+            background: var(--border-color);             
+            border-radius: 8px;         
+        }         
+        .chat-item {             
+            min-height: 74px;             
+            display: flex;             
+            align-items: center;             
+            padding: 10px 17px;             
+            gap: 13px;             
+            margin: 2px 0;             
+            border-radius: 14px;             
+            cursor: pointer;             
+            text-decoration: none;             
+            color: inherit;             
+            transition: .2s ease;         
+        }         
+        .chat-item:hover {             
+            background: var(--bg-hover);             
+            transform: translateX(2px);         
+        }         
+        .chat-avatar {             
+            width: 53px;             
+            height: 53px;             
+            border-radius: 50%;             
+            object-fit: cover;             
+            flex-shrink: 0;             
+            border: 1px solid var(--border-color);             
+        }         
+        .chat-info {             
+            min-width: 0;             
+            flex: 1;             
+            display: flex;             
+            flex-direction: column;             
+            justify-content: center;         
+        }         
+        .chat-name {             
+            font-size: 14px;             
+            font-weight: 700;             
+            color: var(--text-main);             
+            margin-bottom: 5px;         
+        }         
+        .chat-preview {             
+            font-size: 12px;             
+            color: var(--text-sec);             
+            white-space: nowrap;             
+            overflow: hidden;             
+            text-overflow: ellipsis;             
+            max-width: 240px;         
+        }         
+        .chat-dot {             
+            width: 7px;             
+            height: 7px;             
+            background: var(--primary-accent);             
+            border-radius: 50%;             
+            flex-shrink: 0;             
+            box-shadow: 0 0 12px rgba(255,18,60,.7);         
+        }         
+
+        /* Logo Customizada */
+        .logo-letra-s {
+            font-size: 56px;
+            font-weight: 900;
+            font-style: italic;
+            letter-spacing: -8px;
+            line-height: .8;
+            color: var(--text-main);
+            text-shadow: 0 0 25px rgba(255,18,60,.16);
+        }
+        .logo-texto-sinex {
+            margin-top: 14px;
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: -1.3px;
+            color: var(--text-main);
+        }
+        .logo-subtexto {
+            margin-top: 9px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 3.4px;
+            color: var(--text-sec);
+        }
+
+        /* Área central (Placeholder do Chat Vazio) */         
+        .chat-placeholder {             
+            flex: 1;             
+            min-width: 0;             
+            display: flex;             
+            align-items: center;             
+            justify-content: center;             
+            position: relative;             
+            overflow: hidden;             
+            background: var(--bg-panel-2);         
+        }         
+        .placeholder-content {             
+            position: relative;             
+            z-index: 2;             
+            width: min(560px, calc(100% - 80px));             
+            margin-top: 82px;             
+            padding: 30px 40px 34px;             
+            text-align: center;             
+            border: 1px solid var(--border-color);             
+            border-radius: 22px;             
+            background: var(--bg-main);             
+            box-shadow: 0 25px 60px rgba(0, 0, 0, 0.08);         
+        }         
+        .placeholder-icon {             
+            width: 76px;             
+            height: 76px;             
+            margin: 0 auto 20px;             
+            display: flex;             
+            align-items: center;             
+            justify-content: center;             
+            border-radius: 50%;             
+            border: 1px solid var(--border-red);             
+            background: rgba(230,0,43,.05);             
+        }         
+        .placeholder-icon svg {             
+            width: 34px;             
+            height: 34px;             
+            color: var(--primary-accent);             
+        }         
+        .chat-placeholder h2 {             
+            font-size: clamp(25px, 2vw, 32px);             
+            font-weight: 800;             
+            letter-spacing: -.9px;             
+            margin-bottom: 10px;         
+        }         
+        .chat-placeholder p {             
+            max-width: 500px;             
+            margin: 0 auto 26px;             
+            font-size: 13px;             
+            line-height: 1.6;             
+            color: var(--text-sec);         
+        }         
+        .btn-enviar-msg {             
+            border: 1px solid var(--primary-accent);             
+            border-radius: 999px;             
+            padding: 12px 28px;             
+            background: rgba(230, 0, 43, 0.08);             
+            color: var(--primary-accent);             
+            font-size: 13px;             
+            font-weight: 700;             
+            cursor: pointer;             
+            transition: .25s ease;             
+        }         
+        .btn-enviar-msg:hover {             
+            background: var(--primary-accent);             
+            color: #fff;             
+            transform: translateY(-2px);             
+        }         
+
+        /* Responsividade Específica do Inbox */         
+        @media (max-width: 849px) {             
+            .inbox-panel {                 
+                order: 1;                 
+                width: 100%;                 
+                flex: 1;             
+            }             
+            .chat-placeholder {                 
+                display: none;             
+            }         
+        }         
+        @media (min-width: 850px) {             
+            .chat-placeholder { display: flex; }         
+        }     
+
+        /* MODO CLARO - Degradês Complexos que variáveis não cobrem */
+        .light-theme .chat-placeholder {
+            background: radial-gradient(ellipse 60% 42% at 64% 51%, rgba(230,0,43,.065), transparent 60%), linear-gradient(135deg, #fbfbfc, #f0f2f5 55%, #fbfbfc);
+        }
+        .light-theme .placeholder-content { background: rgba(255, 255, 255, 0.85); }
+        .light-theme .placeholder-icon { background: radial-gradient(circle, rgba(230,0,43,.08), transparent 66%); }
+        .light-theme .logo-letra-s, .light-theme .logo-texto-sinex { color: #111; }
+        .light-theme .logo-subtexto { color: #888; }
+        .light-theme .btn-enviar-msg { background: rgba(230, 0, 43, 0.08); border-color: var(--primary-accent); color: var(--primary-accent); }
+        .light-theme .btn-enviar-msg:hover { background: var(--primary-accent); color: #fff; }
+    </style> 
+</head> 
+<body>     
+    <div class="app-layout">                  
+        
+        <!-- NAVEGAÇÃO LATERAL (Idêntica em todas as telas) -->
+        <nav class="side-nav">             
+            <a href="index.html" class="nav-item" title="Página Inicial">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.005 16.545a2.997 2.997 0 0 1 2.997-2.997A2.997 2.997 0 0 1 15 16.545V22h7V11.543L12 2 2 11.543V22h7v-5.455Z"></path></svg>
+            </a>             
+            <a href="explorar.html" class="nav-item" title="Pesquisa">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg>
+            </a>             
+            <!-- Botão ATIVO agora é o das MENSAGENS -->
+            <a href="inbox.html" class="nav-item active" title="Mensagens">                 
+                <div id="badgeGlobal" class="badge" style="display: none;">0</div>                 
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>             
+            </a>             
+            <a href="perfil.html" class="nav-item" title="Perfil">
+                <img id="navAvatar" src="https://cdn-icons-png.flaticon.com/512/149/149071.png">
+            </a>                          
+            <a href="configuracoes.html" class="nav-item" title="Mais" style="margin-top: auto; margin-bottom: 20px; cursor: pointer;">                 
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="4" x2="21" y2="4"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="20" x2="21" y2="20"></line></svg>             
+            </a>         
+        </nav>         
+        
+        <aside class="inbox-panel">             
+            <header class="inbox-header">                 
+                <h1 id="headerNomeUsuario">carregando... <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></h1>                 
+                <a href="explorar.html" class="icon-edit-link" aria-label="Nova conversa"><svg class="icon-edit" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>             
+            </header>             
+            
+            <div class="messages-title">                 
+                <span>Mensagens</span>                 
+                <span class="pedidos">Ver todos</span>             
+            </div>             
+            
+            <!-- LISTA DE CONVERSAS GERADA PELO INBOX.JS -->
+            <div class="chat-list" id="listaConversas">                 
+                <p style='text-align: center; color: var(--text-sec); font-size: 14px; margin-top: 30px;'>Buscando conversas...</p>             
+            </div>         
+        </aside>         
+        
+        <main class="chat-placeholder">             
+            <div style="position:absolute;top:13%;left:50%;transform:translateX(-50%);z-index:2;text-align:center;pointer-events:none;">                 
+                <div class="logo-letra-s">                     
+                    <span style="color:var(--primary-accent);">S</span>                 
+                </div>                 
+                <div class="logo-texto-sinex">                     
+                    Sinex <span style="color:var(--primary-accent);">Chat</span>                 
+                </div>                 
+                <div class="logo-subtexto">                     
+                    CONECTE&nbsp;&nbsp; &nbsp;&nbsp;CONVERSE&nbsp;&nbsp; &nbsp;&nbsp;COMPARTILHE                 
+                </div>             
+            </div>             
+            <div class="placeholder-content">                 
+                <div class="placeholder-icon">                     
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path><polygon points="12 15 17 10 12 10 12 5 7 10 12 10"></polygon></svg>                 
+                </div>                 
+                <h2>Suas mensagens</h2>                 
+                <p>Envie fotos e mensagens privadas para um amigo ou grupo.</p>                 
+                <a href="explorar.html" class="btn-enviar-msg">Enviar mensagem</a>             
+            </div>         
+        </main>     
+    </div>     
+
+    <!-- Scripts Locais Otimizados -->
+    <script type="module" src="radar.js"></script>
+    <script type="module" src="inbox.js"></script>
+</body> 
+</html>

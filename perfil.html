@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-exige-login="sim">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    
+<!-- CONECTANDO AO SEU CSS MESTRE -->
+    <link rel="stylesheet" href="style.css">
+
+    <script src="tema.js"></script>
+<title>Perfil - Sinex Chat</title>
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- ESTILOS EXCLUSIVOS DO PERFIL -->
+    <style>
+        .profile-panel { flex: 1; display: flex; flex-direction: column; width: 100%; background-color: var(--bg-main); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        
+        .profile-header-top { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; position: sticky; top: 0; background: var(--bg-main); z-index: 10; padding-top: calc(16px + env(safe-area-inset-top)); }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        
+        .btn-back { background: none; border: none; color: var(--text-main); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: transform 0.2s; outline: none; }
+        .btn-back:active { transform: scale(0.9); }
+        
+        /* Capa Premium e Layout */
+        .profile-content { padding: 0; max-width: 600px; margin: 0 auto; width: 100%; animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .profile-cover { width: 100%; height: 140px; background: linear-gradient(135deg, var(--primary-accent), var(--primary-accent-2)); border-radius: 0 0 24px 24px; position: relative; z-index: 1; }
+        .profile-info-row { display: flex; align-items: flex-end; justify-content: space-between; margin-top: -50px; margin-bottom: 24px; position: relative; z-index: 2; padding: 0 20px; }
+        .profile-avatar { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 4px solid var(--bg-main); background-color: var(--bg-main); flex-shrink: 0; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+        
+        .profile-stats { display: flex; gap: 20px; text-align: center; flex-grow: 1; justify-content: flex-end; padding-bottom: 10px; }
+        .stat-item { cursor: pointer; transition: opacity 0.2s; }
+        .stat-item:active { opacity: 0.5; }
+        .stat-value { font-weight: 700; font-size: 17px; color: var(--text-main); }
+        .stat-label { font-size: 13px; color: var(--text-sec); margin-top: 2px; }
+        
+        .profile-bio-box, .profile-actions { padding: 0 20px; }
+        .profile-bio-box { margin-bottom: 20px; word-break: break-word; }
+        .profile-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+        .profile-bio { font-size: 14px; color: var(--text-sec); line-height: 1.4; white-space: pre-wrap; }
+        
+        .profile-actions { display: flex; gap: 8px; margin-bottom: 30px; }
+        .btn-profile-action { flex: 1; background: var(--bg-panel-2); color: var(--text-main); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; outline: none; }
+        .btn-profile-action:active { transform: scale(0.96); }
+        #btnSeguirPerfil { background: var(--primary-accent); color: white; border: none; }
+        #btnSeguirPerfil:hover { background: var(--primary-accent-2); }
+        
+        /* Modais */
+        #overlayHamburguer { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); z-index: 999; opacity: 0; transition: opacity 0.3s ease; }
+        #menuHamburguer { display: flex; position: fixed; bottom: -100%; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--bg-panel); border-top-left-radius: 20px; border-top-right-radius: 20px; z-index: 1000; flex-direction: column; transition: bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); border-top: 1px solid var(--border-color); padding-bottom: calc(20px + env(safe-area-inset-bottom)); box-shadow: 0 -10px 40px rgba(0,0,0,0.3); }
+        
+        #modalListaUsuarios { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 2000; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+        .modal-box { background: var(--bg-panel); width: 90%; max-width: 400px; height: 75vh; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; border: 1px solid var(--border-color); box-shadow: 0 15px 35px rgba(0,0,0,0.4); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 12px; }
+        .modal-close-btn { background: none; border: none; font-size: 22px; color: var(--text-main); cursor: pointer; padding: 0; transition: transform 0.2s; }
+        .modal-close-btn:active { transform: scale(0.8); }
+        
+        @media (min-width: 850px) {
+            .profile-panel { max-width: 650px; border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color); margin: 0 auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-layout">
+        
+        <!-- NAVEGAÇÃO LATERAL (Idêntica em todas as telas) -->
+        <nav class="side-nav">
+            <a href="inbox.html" class="nav-item" title="Página Inicial">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.005 16.545a2.997 2.997 0 0 1 2.997-2.997A2.997 2.997 0 0 1 15 16.545V22h7V11.543L12 2 2 11.543V22h7v-5.455Z"></path></svg>
+            </a>
+            <a href="explorar.html" class="nav-item" title="Pesquisa">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg>
+            </a>
+            <a href="inbox.html" class="nav-item" title="Mensagens">
+                <div id="badgeGlobal" class="badge" style="display: none;">0</div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
+            </a>
+            <!-- Botão ATIVO agora é o Meu Perfil -->
+            <a href="index.html" class="nav-item active" title="Perfil">
+                <img id="navAvatar" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Avatar">
+            </a>
+            <a href="configuracoes.html" class="nav-item" title="Mais" style="margin-top: auto; margin-bottom: 20px; cursor: pointer;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="4" x2="21" y2="4"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="20" x2="21" y2="20"></line></svg>
+            </a>
+        </nav>
+
+        <!-- COLUNA DO PERFIL -->
+        <main class="profile-panel">
+            <header class="profile-header-top">
+                <div class="header-left">
+                    <button id="btnVoltar" type="button" class="btn-back" aria-label="Voltar">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    </button>
+                    <strong id="headerUsername" style="font-size: 16px; font-weight: 700;">carregando...</strong>
+                </div>
+                <button id="btnAbrirMenu" type="button" aria-label="Mais opções" style="background: none; border: none; font-size: 24px; color: var(--text-main); cursor: pointer; font-weight: bold;">⋮</button>
+            </header>
+
+            <div class="profile-content">
+                <div class="profile-cover"></div>
+                <div class="profile-info-row">
+                    <img id="myProfilePic" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" class="profile-avatar">
+                    
+                    <div class="profile-stats">
+                        <div class="stat-item" id="btnPosts" role="button" tabindex="0">
+                            <div id="myPostsCount" class="stat-value">0</div>
+                            <div class="stat-label">posts</div>
+                        </div>
+                        <div class="stat-item" id="btnAbrirSeguidores">
+                            <div id="myFollowersCount" class="stat-value">0</div>
+                            <div class="stat-label">seguidores</div>
+                        </div>
+                        <div class="stat-item" id="btnAbrirSeguindo">
+                            <div id="myFollowingCount" class="stat-value">0</div>
+                            <div class="stat-label">seguindo</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="profile-bio-box">
+                    <h2 id="myDisplayName" class="profile-name">Carregando...</h2>
+                    <p id="myBio" class="profile-bio">...</p>
+                </div>
+
+                <div id="botoesOutroPerfil" class="profile-actions" style="display: none;">
+                    <button id="btnSeguirPerfil" class="btn-profile-action">Seguir</button>
+                    <button id="btnMensagemPerfil" class="btn-profile-action">Mensagem</button>
+                </div>
+
+                <div id="botoesMeuPerfil" class="profile-actions" style="display: none;">
+                    <a id="btnEditarPerfil" class="btn-profile-action" href="editar-perfil.html">Editar perfil</a>
+                    <button id="btnCompartilharPerfil" type="button" class="btn-profile-action">Compartilhar perfil</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAIS E MENUS FLUTUANTES -->
+    <div id="overlayHamburguer"></div>
+    <div id="menuHamburguer">
+        <div style="width: 40px; height: 4px; background: var(--border-color); border-radius: 2px; margin: 12px auto 16px auto;"></div>
+        <div id="btnCopiarLink" role="button" tabindex="0" style="padding: 14px 20px; cursor: pointer; display: flex; align-items: center; gap: 12px; font-weight: 600;">🔗 Copiar link do perfil</div>
+        <div id="btnBloquear" role="button" tabindex="0" style="padding: 14px 20px; cursor: pointer; display: flex; align-items: center; gap: 12px; color: var(--primary-accent); font-weight: 600;">🚫 Bloquear conta</div>
+        <div id="btnDenunciar" role="button" tabindex="0" style="padding: 14px 20px; cursor: pointer; display: flex; align-items: center; gap: 12px; color: var(--primary-accent); font-weight: 600;">🚩 Denunciar</div>
+    </div>
+
+    <div id="modalListaUsuarios">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="modalListaTitulo" style="font-size: 16px; font-weight: 700; margin: 0;">Lista</h3>
+                <button id="btnFecharModalLista" class="modal-close-btn">×</button>
+            </div>
+            <div id="modalListaConteudo" style="flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
+                <span style="color: var(--text-sec); text-align: center; margin-top: 30px; font-size: 14px;">Buscando...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPT INLINE DE INTERFACE E MODAIS -->
+<!-- Scripts Externos Originais -->
+    <script type="module" src="radar.js"></script>
+    
+    <!-- Aqui carrega os dados reais do Perfil (bio, botão de seguir, etc) que você já tem no seu perfil.js -->
+    <script type="module" src="perfil.js"></script>
+</body>
+</html>

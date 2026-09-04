@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// Regras do Firebase Storage.
+//
+// Cada arquivo mora sob o uid de quem enviou, então a permissão de escrita é
+// decidida pelo próprio caminho — sem depender de nada vindo do cliente.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function souDono(uid) {
+      return autenticado() && request.auth.uid == uid;
+    }
+
+    function ehImagem() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function ehAudio() {
+      return request.resource.contentType.matches('audio/.*');
+    }
+
+    function ateMB(n) {
+      return request.resource.size < n * 1024 * 1024;
+    }
+
+    // Foto de perfil: 5 MB, só imagem.
+    match /avatares/{uid}/{arquivo} {
+      allow read: if autenticado();
+      allow write: if souDono(uid) && ehImagem() && ateMB(5);
+    }
+
+    // Áudio de mensagem: 15 MB.
+    match /audios/{uid}/{arquivo=**} {
+      allow read: if autenticado();
+      allow write: if souDono(uid) && ehAudio() && ateMB(15);
+    }
+
+    // Imagem enviada no chat: 10 MB.
+    match /imagens/{uid}/{arquivo=**} {
+      allow read: if autenticado();
+      allow write: if souDono(uid) && ehImagem() && ateMB(10);
+    }
+
+    match /{caminho=**} {
+      allow read, write: if false;
+    }
+  }
+}

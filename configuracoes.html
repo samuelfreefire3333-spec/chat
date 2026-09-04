@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-exige-login="sim">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    
+<!-- CONECTANDO AO SEU CSS MESTRE -->
+    <link rel="stylesheet" href="style.css">
+    <script src="tema.js"></script>
+<title>Configurações - Sinex Chat</title>
+    <link rel="manifest" href="manifest.json">
+    
+    <!-- ESTILOS EXCLUSIVOS DA TELA DE CONFIGURAÇÕES -->
+    <style>
+        .settings-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: var(--bg-main);
+            overflow-y: auto;
+        }
+        
+        .settings-header {
+            width: 100%;
+            height: 86px;
+            display: flex;
+            align-items: center;
+            padding: 0 40px;
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+            background: var(--bg-main);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            padding-top: env(safe-area-inset-top);
+        }
+        
+        .settings-header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -.4px;
+            color: var(--text-main);
+        }
+        
+        .settings-content {
+            width: 100%;
+            max-width: 600px;
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        
+        .settings-group {
+            background: var(--bg-panel-2);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+        }
+        
+        .settings-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 24px;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        
+        .settings-item:hover {
+            background: var(--bg-hover);
+        }
+        
+        .settings-divider {
+            height: 1px;
+            background: var(--border-color);
+            margin: 0 24px;
+        }
+        
+        .item-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        
+        .item-icon {
+            font-size: 20px;
+        }
+        
+        .item-text {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+        
+        .btn-logout {
+            width: 100%;
+            padding: 18px;
+            background: transparent;
+            border: 1px solid var(--primary-accent);
+            border-radius: 16px;
+            color: var(--primary-accent);
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s ease;
+            text-align: center;
+        }
+        
+        .btn-logout:hover {
+            background: rgba(230, 0, 43, 0.05);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(230,0,43,0.08);
+        }
+        
+        .btn-logout:active {
+            transform: scale(0.98);
+        }
+        
+        /* Responsividade Específica para Configurações */
+        @media (max-width: 849px) {
+            .settings-panel {
+                order: 1;
+                width: 100%;
+                flex: 1;
+            }
+            .settings-header {
+                padding: 0 25px;
+            }
+        }
+        
+        /* Toast Notification */
+        #toast-aviso { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--primary-accent); color: white; padding: 12px 24px; border-radius: 30px; font-size: 14px; font-weight: 700; opacity: 0; visibility: hidden; transition: all 0.3s ease; z-index: 9999; box-shadow: 0 4px 15px rgba(230,0,43,0.4); white-space: nowrap; }
+        #toast-aviso.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+    </style>
+</head>
+<body>
+    <div class="app-layout">
+        
+        <!-- NAVEGAÇÃO LATERAL -->
+        <nav class="side-nav">
+            <a href="inbox.html" class="nav-item" title="Página Inicial">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.005 16.545a2.997 2.997 0 0 1 2.997-2.997A2.997 2.997 0 0 1 15 16.545V22h7V11.543L12 2 2 11.543V22h7v-5.455Z"></path></svg>
+            </a>
+            <a href="explorar.html" class="nav-item" title="Pesquisa">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg>
+            </a>
+            <a href="inbox.html" class="nav-item" title="Mensagens">
+                <div id="badgeGlobal" class="badge" style="display: none;">0</div>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
+            </a>
+            <a href="perfil.html" class="nav-item" title="Perfil">
+                <img id="navAvatar" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Avatar">
+            </a>
+            
+            <!-- Botão ATIVO agora é o das Configurações -->
+            <a href="configuracoes.html" class="nav-item active" title="Mais" style="margin-top: auto; margin-bottom: 20px; cursor: pointer;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="4" x2="21" y2="4"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="20" x2="21" y2="20"></line></svg>
+            </a>
+        </nav>
+
+        <!-- PAINEL DE CONFIGURAÇÕES -->
+        <main class="settings-panel">
+            <header class="settings-header">
+                <h1>Configurações</h1>
+            </header>
+            
+            <div class="settings-content">
+                
+                <!-- BLOCO 1 -->
+                <div class="settings-group">
+                    <a class="settings-item" href="configuracoes-tema.html">
+                        <div class="item-left">
+                            <span class="item-icon">🌙</span>
+                            <span class="item-text">Aparência e Tema</span>
+                        </div>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-sec)" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </div>
+                    
+                    <div class="settings-divider"></div>
+                    
+                    <!-- PAINEL PROFISSIONAL (Oculto por padrão com display: none) -->
+                    <a id="btnPainelAdmin" class="settings-item" href="admin.html" style="display: none;">
+                        <div class="item-left">
+                            <span class="item-icon">🛡️</span>
+                            <span class="item-text">Painel Profissional</span>
+                        </div>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-sec)" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </div>
+                </div>
+
+                <!-- BLOCO DE SAÍDA -->
+                <button class="btn-logout" type="button" data-acao="sair">Sair da conta</button>
+            </div>
+        </main>
+    </div>
+    
+    <div id="toast-aviso">Alerta!</div>
+
+    <!-- MÓDULOS DE AUTENTICAÇÃO E FUNÇÕES -->
+<!-- Script de Tempo Real consolidado (Sem o Socket.io inútil) -->
+    <script type="module" src="radar.js"></script>
+    <script type="module" src="configuracoes.js"></script>
+</body>
+</html>
