@@ -2,7 +2,7 @@ import { storage } from "./firebase.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import Core, {
   sessao, urlSegura, definirAvatar, horaCurta, tempoRelativo,
-  buscarPerfilPorUsername, idDoChat, AVATAR_PADRAO
+  buscarPerfilPorUsername, idDoChat, AVATAR_PADRAO, montarAvatarNav // 🔴 ADICIONE AQUI
 } from "./core.js";
 import Radar from "./radar.js";
 import { escutarMensagens, enviarMensagem, garantirChat } from "./mensagens.js";
@@ -466,7 +466,9 @@ function iniciarChamada(tipo) {
 
 async function iniciar() {
   sessaoAtual = await sessao();
-
+  
+  montarAvatarNav(); // 🔴 ADICIONE ESTA LINHA AQUI
+  
   if (sessaoAtual.username === outroUsuario) {
     window.location.replace("inbox.html");
     return;
