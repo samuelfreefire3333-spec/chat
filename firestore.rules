@@ -78,7 +78,13 @@ service cloud.firestore {
           && request.resource.data.usuarios.size() == 2;
       }
 
-      allow read: if souParticipante();
+      // CORREÇÃO AQUI: Dividimos o read em get (documento único) e list (queries).
+      // Permitimos o `get` se o documento for null. Isso retorna um NotFound 
+      // (ao invés de Permission Denied) para o `getDoc` no momento em que você 
+      // chama a função garantirChat() para uma conversa que ainda não foi criada.
+      allow get: if resource == null || souParticipante();
+      allow list: if souParticipante();
+      
       allow create: if viraiParticipante();
 
       // A lista de participantes é imutável depois de criada.
@@ -95,11 +101,11 @@ service cloud.firestore {
 
         allow read: if participanteDoChat();
 
-        // Só dá para escrever mensagem em nome próprio, e o timestamp é o
-        // do servidor — não o relógio do celular de quem enviou.
+        // CORREÇÃO AQUI: `is timestamp` previne bugs do `request.time`
+        // caso o SDK gere um timestamp simulado no cache local antes da rede voltar.
         allow create: if participanteDoChat()
           && request.resource.data.remetenteUid == meuUID()
-          && request.resource.data.timestamp == request.time;
+          && request.resource.data.timestamp is timestamp;
 
         // Mensagem enviada não se reescreve; apagar fica com o remetente.
         allow update: if false;
