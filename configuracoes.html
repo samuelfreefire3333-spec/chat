@@ -167,35 +167,33 @@
                 <h1>Configurações</h1>
             </header>
             
-            <div class="settings-content">
-                
-                <!-- BLOCO 1 -->
-                <div class="settings-group">
-                    <a class="settings-item" href="configuracoes-tema.html">
-                        <div class="item-left">
-                            <span class="item-icon">🌙</span>
-                            <span class="item-text">Aparência e Tema</span>
-                        </div>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-sec)" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                    </div>
-                    
-                    <div class="settings-divider"></div>
-                    
-                    <!-- PAINEL PROFISSIONAL (Oculto por padrão com display: none) -->
-                    <a id="btnPainelAdmin" class="settings-item" href="admin.html" style="display: none;">
-                        <div class="item-left">
-                            <span class="item-icon">🛡️</span>
-                            <span class="item-text">Painel Profissional</span>
-                        </div>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-sec)" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                    </div>
-                </div>
+          <div class="settings-content">
+                 
+                 <!-- BLOCO 1 -->
+                 <div class="settings-group">
+                     <a class="settings-item" href="configuracoes-tema.html">
+                         <div class="item-left">
+                             <span class="item-icon">🎨</span>
+                             <span class="item-text">Aparência e Tema</span>
+                         </div>
+                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-sec)" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                     </a> <!-- 🔴 CORRIGIDO AQUI: era </div>, agora é </a> -->
+                     
+                     <div class="settings-divider"></div>
+                     
+                     <!-- PAINEL PROFISSIONAL (Oculto por padrão com display: none) -->
+                     <a id="btnPainelAdmin" class="settings-item" href="admin.html" style="display: none;">
+                         <div class="item-left">
+                             <span class="item-icon">🛡️</span>
+                             <span class="item-text">Painel Profissional</span>
+                         </div>
+                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-sec)" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                     </a> <!-- 🔴 CORRIGIDO AQUI: era </div>, agora é </a> -->
+                 </div>
 
-                <!-- BLOCO DE SAÍDA -->
-                <button class="btn-logout" type="button" data-acao="sair">Sair da conta</button>
-            </div>
-        </main>
-    </div>
+                 <!-- BLOCO DE SAÍDA -->
+                 <button class="btn-logout" type="button" data-acao="sair">Sair da conta</button>
+             </div>
     
     <div id="toast-aviso">Alerta!</div>
 
