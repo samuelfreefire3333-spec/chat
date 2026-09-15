@@ -5,13 +5,6 @@ import { registrarEventoDeChamada } from "./mensagens.js";
 // ==========================================================================
 // CHAMADAS DE VOZ E VÍDEO (WebRTC)
 // ==========================================================================
-// Este arquivo não existia. A página chamada.html referenciava chamada.js num
-// comentário e toda a lógica de mídia estava ausente — as chamadas nunca
-// funcionaram, embora o app já registrasse "chamada perdida" na conversa.
-//
-// A sinalização (oferta, resposta e candidatos ICE) passa pelo WebSocket que
-// já existe, no tipo "webrtc". Não usamos o Firestore para isso: seria mais
-// lento, mais caro e deixaria rastro de sessões encerradas.
 
 const params = new URLSearchParams(window.location.search);
 const outroUsuario = (params.get("u") || "").toLowerCase().trim();
@@ -81,7 +74,6 @@ async function capturarMidia() {
     streamLocal = await navigator.mediaDevices.getUserMedia(restricoes);
   } catch (err) {
     console.error("Acesso à mídia negado:", err);
-
     if (!apenasAudio) {
       // Sem câmera, ainda dá para seguir só com voz.
       try {
@@ -110,7 +102,7 @@ async function capturarMidia() {
 }
 
 // --------------------------------------------------------------------------
-// Conexão
+// Conexão WebRTC
 // --------------------------------------------------------------------------
 
 function criarConexao() {
@@ -125,7 +117,6 @@ function criarConexao() {
   conexao.ontrack = (evento) => {
     streamRemoto = evento.streams[0];
     if (elVideoRemoto) elVideoRemoto.srcObject = streamRemoto;
-
     const temVideo = streamRemoto.getVideoTracks().length > 0;
     if (temVideo && elVideoLayer) {
       elVideoLayer.style.display = "block";
@@ -154,16 +145,13 @@ function criarConexao() {
 
 function aoConectar() {
   if (inicioDaConversa) return;
-
   clearTimeout(temporizadorLimite);
   inicioDaConversa = Date.now();
-
   cronometro = setInterval(() => {
     const s = Math.floor((Date.now() - inicioDaConversa) / 1000);
     const m = String(Math.floor(s / 60)).padStart(2, "0");
     definirStatus(`${m}:${String(s % 60).padStart(2, "0")}`);
   }, 1000);
-
   definirStatus("00:00");
 }
 
@@ -180,13 +168,17 @@ async function aplicarCandidatosPendentes() {
 
 async function iniciarComoEmissor() {
   definirStatus("Chamando...");
-
   const oferta = await conexao.createOffer();
   await conexao.setLocalDescription(oferta);
   sinalizar("oferta", { sdp: oferta.sdp, type: oferta.type });
 }
 
 async function tratarOferta(oferta) {
+  if (conexao.signalingState !== "stable") {
+    console.warn("Ignorando oferta recebida em estado de sinalização inválido:", conexao.signalingState);
+    return;
+  }
+
   await conexao.setRemoteDescription(new RTCSessionDescription(oferta));
   descricaoRemotaAplicada = true;
   await aplicarCandidatosPendentes();
@@ -197,7 +189,11 @@ async function tratarOferta(oferta) {
 }
 
 async function tratarResposta(resposta) {
-  if (conexao.signalingState === "stable") return;
+  if (conexao.signalingState !== "have-local-offer") {
+    console.warn("Ignorando resposta recebida sem oferta local pendente:", conexao.signalingState);
+    return;
+  }
+
   await conexao.setRemoteDescription(new RTCSessionDescription(resposta));
   descricaoRemotaAplicada = true;
   await aplicarCandidatosPendentes();
@@ -258,7 +254,6 @@ function alternarMicrofone() {
   if (!streamLocal) return;
   mudo = !mudo;
   streamLocal.getAudioTracks().forEach((f) => { f.enabled = !mudo; });
-
   btnMute?.classList.toggle("active-muted", mudo);
   btnMute?.setAttribute("aria-label", mudo ? "Ativar microfone" : "Desativar microfone");
   btnMute?.setAttribute("aria-pressed", mudo ? "true" : "false");
@@ -268,10 +263,8 @@ function alternarVideo() {
   if (!streamLocal) return;
   const faixas = streamLocal.getVideoTracks();
   if (!faixas.length) return;
-
   cameraDesligada = !cameraDesligada;
   faixas.forEach((f) => { f.enabled = !cameraDesligada; });
-
   btnVideo?.classList.toggle("active-muted", cameraDesligada);
   btnVideo?.setAttribute("aria-label", cameraDesligada ? "Ligar câmera" : "Desligar câmera");
   btnVideo?.setAttribute("aria-pressed", cameraDesligada ? "true" : "false");
@@ -305,7 +298,6 @@ async function encerrar(avisarOutroLado = true) {
   }
 
   try { localStorage.removeItem("chamada_ativa"); } catch (_) {}
-
   window.location.replace(`chat.html?u=${encodeURIComponent(outroUsuario)}`);
 }
 
@@ -320,7 +312,7 @@ window.addEventListener("pagehide", () => {
 });
 
 // --------------------------------------------------------------------------
-// Início
+// Inicialização
 // --------------------------------------------------------------------------
 
 async function iniciar() {
@@ -332,6 +324,7 @@ async function iniciar() {
   }
 
   elNome.textContent = outroUsuario;
+
   try {
     const perfil = await buscarPerfilPorUsername(outroUsuario);
     if (perfil?.nome) elNome.textContent = perfil.nome;
@@ -346,7 +339,6 @@ async function iniciar() {
 
   if (souQuemLigou) {
     await iniciarComoEmissor();
-
     temporizadorLimite = setTimeout(async () => {
       if (inicioDaConversa) return;
       Core.aviso("Ninguém atendeu.", "#e0a800");
