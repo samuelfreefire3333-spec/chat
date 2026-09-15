@@ -10,7 +10,6 @@ import Radar from "./radar.js";
 import { apagarChat } from "./mensagens.js";
 
 const listaEl = document.getElementById("listaConversas");
-
 let sessaoAtual = null;
 let pararDeEscutar = null;
 let conversas = [];
@@ -27,7 +26,7 @@ const selecionados = new Set();
 /**
  * Busca os perfis que faltam em UMA consulta com "in", em vez de uma consulta
  * por conversa. Antes cada card disparava um getDocs próprio.
- * Só se aplica a chats diretos — um grupo não tem "o outro perfil", ele tem
+ * Só se aplica a chats diretos – um grupo não tem "o outro perfil", ele tem
  * nome e (por enquanto) avatar genérico próprios.
  */
 async function carregarPerfis(usernames) {
@@ -38,13 +37,36 @@ async function carregarPerfis(usernames) {
   for (let i = 0; i < faltando.length; i += 30) {
     const lote = faltando.slice(i, i + 30);
     try {
-      const snap = await getDocs(
-        query(collection(db, "usuarios"), where(documentId(), "in", lote))
-      );
-      snap.forEach((d) => cachePerfis.set(d.id, { id: d.id, ...d.data() }));
+      // Eng. de Software Avançada: Busca paralela para mitigar anomalias de Document ID vs Campo Username
+      const qPorId = getDocs(query(collection(db, "usuarios"), where(documentId(), "in", lote)));
+      const qPorCampo = getDocs(query(collection(db, "usuarios"), where("usuario", "in", lote)));
+      
+      const [snapId, snapCampo] = await Promise.all([qPorId, qPorCampo]);
+
+      // Função auxiliar para popular o cache com os resultados
+      const popularCache = (snap) => {
+        snap.forEach((d) => {
+          const dados = d.data();
+          const username = dados.usuario || d.id; // Fallback seguro
+          
+          // Garante a existência do objeto usando a chave de Username e a de Document ID.
+          // Isso imuniza a renderização contra desalinhamentos estruturais.
+          if (!cachePerfis.has(username)) {
+            cachePerfis.set(username, { id: d.id, ...dados });
+          }
+          if (!cachePerfis.has(d.id)) {
+            cachePerfis.set(d.id, { id: d.id, ...dados });
+          }
+        });
+      };
+
+      popularCache(snapId);
+      popularCache(snapCampo);
+
     } catch (err) {
       console.error("Erro ao carregar perfis:", err);
     }
+
     // Quem não voltou (perfil apagado) recebe um espaço reservado.
     lote.forEach((u) => {
       if (!cachePerfis.has(u)) {
@@ -66,7 +88,7 @@ function textoDeStatus(perfil) {
 function montarCard(chat) {
   const ehGrupo = chat.tipo === "grupo";
   const perfil = ehGrupo ? null : (cachePerfis.get(chat.outroUsuario) || {});
-
+  
   const item = document.createElement("div");
   item.className = "chat-item";
   item.id = `chat-card-${chat.id}`;
@@ -115,6 +137,7 @@ function montarCard(chat) {
 
   const previa = document.createElement("span");
   previa.className = "chat-preview";
+  
   const souEuUltimo = chat.ultimoRemetente === sessaoAtual.username;
   const prefixo = souEuUltimo
     ? "Você: "
@@ -125,6 +148,7 @@ function montarCard(chat) {
   // direto) em vez do username do outro contato como era antes.
   const ultimoAcesso = parseInt(localStorage.getItem(`last_read_${chat.id}`), 10) || 0;
   const temNovidade = !souEuUltimo && chat.timestampMs > ultimoAcesso;
+
   if (temNovidade) {
     previa.classList.add("nao-lida");
     hora.classList.add("nao-lida");
@@ -162,7 +186,7 @@ function renderizar() {
 }
 
 function pedirPresencaDeTodos() {
-  // Presença é só de chat direto — um grupo não tem "um" status online.
+  // Presença é de chat direto – um grupo não tem "um" status online.
   conversas.filter((c) => c.tipo === "direto").forEach((chat) => Radar.verificarStatus(chat.outroUsuario));
 }
 
@@ -186,7 +210,6 @@ window.addEventListener("mensagem_servidor", (e) => {
 
   el.dataset.online = "false";
   el.classList.remove("online");
-
   const perfil = cachePerfis.get(msg.from);
   // O servidor manda o lastSeen junto na resposta; se não vier, usa o do cache.
   const lastSeen = msg.lastSeen || perfil?.lastSeen || 0;
@@ -255,6 +278,7 @@ async function apagarConversas(ids) {
 
   const algumGrupo = ids.some((id) => conversas.find((c) => c.id === id)?.tipo === "grupo");
   const plural = ids.length > 1;
+
   const ok = await Core.confirmar(
     plural
       ? `Apagar ${ids.length} conversas? As mensagens serão excluídas para todos os participantes.`
@@ -266,8 +290,8 @@ async function apagarConversas(ids) {
   if (!ok) return;
 
   Core.aviso(plural ? "Apagando conversas..." : "Apagando conversa...");
-
   const falhas = [];
+
   for (const id of ids) {
     try {
       await apagarChat(id);
@@ -353,6 +377,7 @@ function abrirMenuContexto(evento, chatId, usuario, tipo) {
   const altura = menu.offsetHeight || 200;
   const x = Math.min(evento.clientX, window.innerWidth - largura - 8);
   const y = Math.min(evento.clientY, window.innerHeight - altura - 8);
+  
   menu.style.left = `${Math.max(8, x)}px`;
   menu.style.top = `${Math.max(8, y)}px`;
 
@@ -362,15 +387,17 @@ function abrirMenuContexto(evento, chatId, usuario, tipo) {
 document.addEventListener("click", (e) => {
   if (menuContexto && !menuContexto.contains(e.target)) fecharMenuContexto();
 });
+
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (menuContexto) fecharMenuContexto();
   else if (modoSelecao) cancelarSelecao();
 });
+
 window.addEventListener("scroll", fecharMenuContexto, true);
 
 // --------------------------------------------------------------------------
-// Eventos da lista (delegação — nenhum onclick no HTML gerado)
+// Eventos da lista (delegação, nenhum onclick no HTML gerado)
 // --------------------------------------------------------------------------
 
 let timerPressao = null;
@@ -414,6 +441,7 @@ function iniciarPressaoLonga(e) {
   clearTimeout(timerPressao);
   timerPressao = setTimeout(() => ativarModoSelecao(item.dataset.chatId), 500);
 }
+
 function cancelarPressaoLonga() {
   clearTimeout(timerPressao);
 }
@@ -473,7 +501,6 @@ function montarBarraDeSelecao() {
 
 async function iniciar() {
   sessaoAtual = await sessao();
-
   montarBarraDeSelecao();
   montarAvatarNav();
 
@@ -487,7 +514,7 @@ async function iniciar() {
   window.atualizarBadge?.();
 
   // Autorização pelo uid: é o mesmo campo que as regras do Firestore checam.
-  // Funciona igual para chats diretos e para grupos — "uids" existe nos dois.
+  // Funciona igual para chats diretos e para grupos – "uids" existe nos dois.
   const consulta = query(
     collection(db, "chats"),
     where("uids", "array-contains", sessaoAtual.user.uid),
@@ -501,7 +528,7 @@ async function iniciar() {
       conversas = snap.docs
         .map((d) => {
           const dados = d.data();
-
+          
           if (dados.tipo === "grupo") {
             return {
               id: d.id,
@@ -513,9 +540,10 @@ async function iniciar() {
               timestampMs: paraMillis(dados.timestamp),
             };
           }
-
+          
           const outro = (dados.usuarios || []).find((u) => u !== sessaoAtual.username);
           if (!outro) return null;
+
           return {
             id: d.id,
             tipo: "direto",
@@ -530,6 +558,7 @@ async function iniciar() {
       await carregarPerfis(
         conversas.filter((c) => c.tipo === "direto").map((c) => c.outroUsuario)
       );
+
       renderizar();
     },
     (err) => {
