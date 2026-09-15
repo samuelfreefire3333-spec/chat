@@ -27,6 +27,8 @@ const selecionados = new Set();
 /**
  * Busca os perfis que faltam em UMA consulta com "in", em vez de uma consulta
  * por conversa. Antes cada card disparava um getDocs próprio.
+ * Só se aplica a chats diretos — um grupo não tem "o outro perfil", ele tem
+ * nome e (por enquanto) avatar genérico próprios.
  */
 async function carregarPerfis(usernames) {
   const faltando = usernames.filter((u) => !cachePerfis.has(u));
@@ -62,15 +64,18 @@ function textoDeStatus(perfil) {
 }
 
 function montarCard(chat) {
-  const perfil = cachePerfis.get(chat.outroUsuario) || {};
+  const ehGrupo = chat.tipo === "grupo";
+  const perfil = ehGrupo ? null : (cachePerfis.get(chat.outroUsuario) || {});
+
   const item = document.createElement("div");
   item.className = "chat-item";
   item.id = `chat-card-${chat.id}`;
   item.dataset.chatId = chat.id;
-  item.dataset.usuario = chat.outroUsuario;
+  item.dataset.tipo = chat.tipo;
+  if (!ehGrupo) item.dataset.usuario = chat.outroUsuario;
   item.tabIndex = 0;
   item.setAttribute("role", "button");
-  item.setAttribute("aria-label", `Conversa com ${perfil.nome || chat.outroUsuario}`);
+  item.setAttribute("aria-label", `Conversa com ${ehGrupo ? chat.nome : (perfil.nome || chat.outroUsuario)}`);
 
   const check = document.createElement("div");
   check.className = "chat-checkbox";
@@ -79,7 +84,7 @@ function montarCard(chat) {
   const avatar = document.createElement("img");
   avatar.className = "chat-avatar";
   avatar.alt = "";
-  definirAvatar(avatar, perfil.foto);
+  definirAvatar(avatar, ehGrupo ? AVATAR_PADRAO : perfil.foto);
   item.appendChild(avatar);
 
   const info = document.createElement("div");
@@ -90,7 +95,7 @@ function montarCard(chat) {
 
   const nome = document.createElement("strong");
   nome.className = "chat-name";
-  nome.textContent = perfil.nome || chat.outroUsuario;
+  nome.textContent = ehGrupo ? chat.nome : (perfil.nome || chat.outroUsuario);
 
   const hora = document.createElement("span");
   hora.className = "chat-hora";
@@ -100,16 +105,25 @@ function montarCard(chat) {
 
   const status = document.createElement("span");
   status.className = "chat-status";
-  status.id = `status-inbox-${chat.outroUsuario}`;
-  status.dataset.online = "false";
-  status.textContent = textoDeStatus(perfil);
+  if (ehGrupo) {
+    status.textContent = `${chat.participantes.length} participantes`;
+  } else {
+    status.id = `status-inbox-${chat.outroUsuario}`;
+    status.dataset.online = "false";
+    status.textContent = textoDeStatus(perfil);
+  }
 
   const previa = document.createElement("span");
   previa.className = "chat-preview";
   const souEuUltimo = chat.ultimoRemetente === sessaoAtual.username;
-  previa.textContent = (souEuUltimo ? "Você: " : "") + (chat.ultimaMensagem || "Abra para conversar");
+  const prefixo = souEuUltimo
+    ? "Você: "
+    : (ehGrupo && chat.ultimoRemetente ? `${chat.ultimoRemetente}: ` : "");
+  previa.textContent = prefixo + (chat.ultimaMensagem || "Abra para conversar");
 
-  const ultimoAcesso = parseInt(localStorage.getItem(`last_read_${chat.outroUsuario}`), 10) || 0;
+  // A chave de "último lido" usa o ID do chat (funciona igual para grupo e
+  // direto) em vez do username do outro contato como era antes.
+  const ultimoAcesso = parseInt(localStorage.getItem(`last_read_${chat.id}`), 10) || 0;
   const temNovidade = !souEuUltimo && chat.timestampMs > ultimoAcesso;
   if (temNovidade) {
     previa.classList.add("nao-lida");
@@ -148,7 +162,8 @@ function renderizar() {
 }
 
 function pedirPresencaDeTodos() {
-  conversas.forEach((chat) => Radar.verificarStatus(chat.outroUsuario));
+  // Presença é só de chat direto — um grupo não tem "um" status online.
+  conversas.filter((c) => c.tipo === "direto").forEach((chat) => Radar.verificarStatus(chat.outroUsuario));
 }
 
 // ==========================================================================
@@ -196,9 +211,6 @@ setInterval(() => {
 // ==========================================================================
 // SELEÇÃO MÚLTIPLA E EXCLUSÃO
 // ==========================================================================
-// Todo este bloco existia apenas como funções vazias no arquivo original
-// (`window.apagarChatsSelecionados = function() { /* ... */ }`), então o botão
-// da lixeira e o menu de botão direito não faziam nada.
 
 function aplicarEstadoDeSelecao() {
   const barra = document.getElementById("selectionBar");
@@ -241,11 +253,14 @@ function cancelarSelecao() {
 async function apagarConversas(ids) {
   if (!ids.length) return;
 
+  const algumGrupo = ids.some((id) => conversas.find((c) => c.id === id)?.tipo === "grupo");
   const plural = ids.length > 1;
   const ok = await Core.confirmar(
     plural
-      ? `Apagar ${ids.length} conversas? As mensagens serão excluídas para você e para o outro participante.`
-      : "Apagar esta conversa? As mensagens serão excluídas para você e para o outro participante.",
+      ? `Apagar ${ids.length} conversas? As mensagens serão excluídas para todos os participantes.`
+      : algumGrupo
+        ? "Apagar este grupo? As mensagens serão excluídas para todos os participantes."
+        : "Apagar esta conversa? As mensagens serão excluídas para você e para o outro participante.",
     { confirmarTexto: "Apagar" }
   );
   if (!ok) return;
@@ -282,9 +297,14 @@ function fecharMenuContexto() {
   menuContexto = null;
 }
 
-function abrirMenuContexto(evento, chatId, usuario) {
+function abrirMenuContexto(evento, chatId, usuario, tipo) {
   evento.preventDefault();
   fecharMenuContexto();
+
+  const ehGrupo = tipo === "grupo";
+  const linkDaConversa = ehGrupo
+    ? `chat.html?g=${encodeURIComponent(chatId)}`
+    : `chat.html?u=${encodeURIComponent(usuario)}`;
 
   const menu = document.createElement("div");
   menu.className = "menu-contexto";
@@ -293,22 +313,28 @@ function abrirMenuContexto(evento, chatId, usuario) {
   const opcoes = [
     {
       rotulo: "Abrir conversa",
-      acao: () => { window.location.href = `chat.html?u=${encodeURIComponent(usuario)}`; },
+      acao: () => { window.location.href = linkDaConversa; },
     },
-    {
+  ];
+
+  if (!ehGrupo) {
+    opcoes.push({
       rotulo: "Ver perfil",
       acao: () => { window.location.href = `perfil.html?u=${encodeURIComponent(usuario)}`; },
-    },
+    });
+  }
+
+  opcoes.push(
     {
       rotulo: "Selecionar",
       acao: () => ativarModoSelecao(chatId),
     },
     {
-      rotulo: "Apagar conversa",
+      rotulo: ehGrupo ? "Apagar grupo para todos" : "Apagar conversa",
       perigo: true,
       acao: () => apagarConversas([chatId]),
-    },
-  ];
+    }
+  );
 
   opcoes.forEach(({ rotulo, acao, perigo }) => {
     const btn = document.createElement("button");
@@ -360,6 +386,8 @@ listaEl?.addEventListener("click", (e) => {
   if (modoSelecao) {
     e.preventDefault();
     alternarSelecao(item.dataset.chatId);
+  } else if (item.dataset.tipo === "grupo") {
+    window.location.href = `chat.html?g=${encodeURIComponent(item.dataset.chatId)}`;
   } else {
     window.location.href = `chat.html?u=${encodeURIComponent(item.dataset.usuario)}`;
   }
@@ -377,7 +405,7 @@ listaEl?.addEventListener("keydown", (e) => {
 listaEl?.addEventListener("contextmenu", (e) => {
   const item = itemAlvo(e);
   if (!item || modoSelecao) return;
-  abrirMenuContexto(e, item.dataset.chatId, item.dataset.usuario);
+  abrirMenuContexto(e, item.dataset.chatId, item.dataset.usuario, item.dataset.tipo);
 });
 
 function iniciarPressaoLonga(e) {
@@ -459,6 +487,7 @@ async function iniciar() {
   window.atualizarBadge?.();
 
   // Autorização pelo uid: é o mesmo campo que as regras do Firestore checam.
+  // Funciona igual para chats diretos e para grupos — "uids" existe nos dois.
   const consulta = query(
     collection(db, "chats"),
     where("uids", "array-contains", sessaoAtual.user.uid),
@@ -472,10 +501,24 @@ async function iniciar() {
       conversas = snap.docs
         .map((d) => {
           const dados = d.data();
+
+          if (dados.tipo === "grupo") {
+            return {
+              id: d.id,
+              tipo: "grupo",
+              nome: dados.nome || "Grupo",
+              participantes: dados.usuarios || [],
+              ultimaMensagem: dados.ultimaMensagem || "",
+              ultimoRemetente: dados.ultimoRemetente || "",
+              timestampMs: paraMillis(dados.timestamp),
+            };
+          }
+
           const outro = (dados.usuarios || []).find((u) => u !== sessaoAtual.username);
           if (!outro) return null;
           return {
             id: d.id,
+            tipo: "direto",
             outroUsuario: outro,
             ultimaMensagem: dados.ultimaMensagem || "",
             ultimoRemetente: dados.ultimoRemetente || "",
@@ -484,7 +527,9 @@ async function iniciar() {
         })
         .filter(Boolean);
 
-      await carregarPerfis(conversas.map((c) => c.outroUsuario));
+      await carregarPerfis(
+        conversas.filter((c) => c.tipo === "direto").map((c) => c.outroUsuario)
+      );
       renderizar();
     },
     (err) => {

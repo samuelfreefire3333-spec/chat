@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -111,6 +113,77 @@ func fecharCom(conn *websocket.Conn, codigo int, motivo string) {
 	conn.Close()
 }
 
+// pedidoKick é o corpo esperado por /admin/kick.
+type pedidoKick struct {
+	Username string `json:"username"`
+}
+
+// serveAdminKick força a desconexão imediata de todas as abas de um usuário.
+// Chamado pelo painel admin (admin.js) logo depois de banir/suspender uma
+// conta no Firestore — sem isso, uma sessão já aberta continuava válida até
+// o token expirar (até 1h), mesmo com a conta suspensa.
+//
+// Como o upgrade do WebSocket não passa por aqui, este endpoint é a única
+// porta HTTP "de verdade" do backend, então a autorização é conferida do
+// zero: o token tem que ser válido E carregar o custom claim "admin" — a
+// mesma claim que as regras do Firestore já exigem para banir alguém.
+func (s *servidor) serveAdminKick(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if token == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	if err := s.identity.VerificarAdmin(ctx, token); err != nil {
+		log.Printf("[admin] /admin/kick recusado: %v", err)
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	var corpo pedidoKick
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&corpo); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	username := strings.ToLower(strings.TrimSpace(corpo.Username))
+	if username == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	s.hub.DesconectarUsuario(username)
+	w.WriteHeader(http.StatusOK)
+}
+
+// comCORS libera as mesmas origens já aceitas pelo WebSocket para endpoints
+// HTTP comuns, e responde ao preflight que o navegador manda por causa do
+// header Authorization.
+func comCORS(permitidas map[string]bool, h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if permitidas[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+			w.Header().Set("Vary", "Origin")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		h(w, r)
+	}
+}
+
 func main() {
 	ctx := context.Background()
 
@@ -148,6 +221,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.serveWs)
+	mux.HandleFunc("/admin/kick", comCORS(permitidas, s.serveAdminKick))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))

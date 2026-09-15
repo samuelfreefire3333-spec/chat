@@ -221,3 +221,33 @@ func TestClienteLentoNaoTravaOHub(t *testing.T) {
 		}
 	}
 }
+
+// Regressão: banir uma conta precisa derrubar sessões já abertas, não só
+// bloquear a próxima tentativa de handshake — é o que o endpoint HTTP
+// /admin/kick (main.go) aciona através de Hub.DesconectarUsuario.
+func TestKickDesconectaTodasAsAbas(t *testing.T) {
+	h := hubDeTeste(t)
+
+	observador := clienteFake("ana", 8)
+	registrar(t, h, observador)
+
+	aba1 := clienteFake("bruno", 8)
+	aba2 := clienteFake("bruno", 8)
+	registrar(t, h, aba1)
+	recebe(t, observador) // "bruno online"
+	registrar(t, h, aba2)
+
+	h.DesconectarUsuario("bruno")
+
+	msg := recebe(t, observador)
+	if msg.Type != "status_update" || msg.From != "bruno" || msg.Content != "offline" {
+		t.Fatalf("esperava bruno offline apos o kick, veio %+v", msg)
+	}
+
+	if _, ok := <-aba1.Send; ok {
+		t.Fatalf("aba1 de bruno deveria ter o canal fechado apos o kick")
+	}
+	if _, ok := <-aba2.Send; ok {
+		t.Fatalf("aba2 de bruno deveria ter o canal fechado apos o kick")
+	}
+}

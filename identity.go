@@ -21,6 +21,11 @@ var ErrSemIdentidade = errors.New("nenhum perfil encontrado para este uid")
 // ErrContaBloqueada indica que o perfil existe mas está suspenso ou banido.
 var ErrContaBloqueada = errors.New("conta suspensa ou banida")
 
+// ErrNaoAdmin indica que o token é válido mas não carrega o custom claim
+// "admin" — usado pelos endpoints HTTP administrativos (não pelo handshake
+// do WebSocket, que usa Verificar).
+var ErrNaoAdmin = errors.New("token nao possui permissao de administrador")
+
 // Identidade é o resultado da verificação de um ID token: o username canônico
 // do app (que é também o ID do documento em "usuarios") e o uid do Firebase.
 type Identidade struct {
@@ -98,6 +103,23 @@ func (i *Identity) Verificar(ctx context.Context, idToken string) (Identidade, e
 	}
 
 	return Identidade{Username: username, UID: tok.UID}, nil
+}
+
+// VerificarAdmin confere a assinatura e a validade do token e exige que ele
+// carregue o custom claim "admin" (o mesmo que as regras do Firestore e o
+// painel administrativo já conferem). Usado pelos endpoints HTTP
+// administrativos do backend Go, como /admin/kick.
+func (i *Identity) VerificarAdmin(ctx context.Context, idToken string) error {
+	tok, err := i.authClient.VerifyIDTokenAndCheckRevoked(ctx, idToken)
+	if err != nil {
+		return err
+	}
+
+	admin, _ := tok.Claims["admin"].(bool)
+	if !admin {
+		return ErrNaoAdmin
+	}
+	return nil
 }
 
 // usernameDoUID mapeia uid -> username. Consulta "usuarios" por uid; se o perfil

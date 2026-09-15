@@ -264,6 +264,115 @@ html, body {
 }
 
 /* =========================================================
+   ↩️ RESPOSTAS, 😀 REAÇÕES E MENSAGENS EM GRUPO
+========================================================= */
+
+/* Coluna que agrupa a bolha + as reações abaixo dela. Quando é filha direta
+   de #mensagens (mensagens minhas, ou qualquer mensagem em grupo) ela mesma
+   carrega o limite de 75% de largura — igual .msg-wrapper-other já fazia.
+   Quando vem dentro de .msg-wrapper-other (chat direto, mensagem do
+   contato), quem já limita a largura é o wrapper. */
+.msg-coluna {
+    display: flex;
+    flex-direction: column;
+    width: fit-content;
+}
+.msg-coluna-minha { align-items: flex-end; }
+.msg-coluna-outro { align-items: flex-start; }
+#mensagens > .msg-coluna { max-width: 75%; align-self: flex-start; }
+#mensagens > .msg-coluna.msg-coluna-minha { align-self: flex-end; }
+.msg-coluna .msg-bubble { max-width: 100%; }
+
+/* Nome de quem mandou, só aparece em grupo e só nas mensagens dos outros. */
+.msg-remetente {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--primary-accent);
+    margin-bottom: 3px;
+}
+
+/* Citação da mensagem original, dentro da bolha de quem respondeu. */
+.msg-citacao {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 10px;
+    margin-bottom: 6px;
+    border-left: 3px solid rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.08);
+    border-radius: 8px;
+    cursor: pointer;
+    max-width: 100%;
+}
+.msg-citacao strong { font-size: 12px; opacity: .95; }
+.msg-citacao span {
+    display: block;
+    font-size: 12.5px;
+    opacity: .78;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.msg-other .msg-citacao { border-left-color: var(--primary-accent); background: rgba(255,255,255,0.05); }
+.light-theme .msg-other .msg-citacao { background: rgba(0,0,0,0.04); }
+
+/* Realce temporário ao pular para a mensagem citada. */
+.msg-destacada { animation: piscar-mensagem 1.2s ease; }
+@keyframes piscar-mensagem {
+    0%, 100% { filter: brightness(1); }
+    30% { filter: brightness(1.35); }
+}
+
+/* Chips de reação, logo abaixo da bolha. */
+.msg-reacoes { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.reacao-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: .15s;
+}
+.reacao-chip:hover { transform: translateY(-1px); }
+.reacao-chip-minha { border-color: var(--primary-accent); background: rgba(230,0,43,.14); }
+
+/* Menu de ações da mensagem (responder + reagir), aberto por toque longo ou
+   clique direito. Reaproveita .menu-item, já definido lá embaixo para o
+   menu de contexto do inbox. */
+.menu-mensagem {
+    position: fixed;
+    min-width: 230px;
+    padding: 10px 8px 6px;
+    background: var(--bg-panel-2);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    box-shadow: var(--shadow-soft);
+    z-index: 99999;
+    animation: popIn .15s ease;
+}
+.menu-mensagem-emojis { display: flex; justify-content: space-between; padding: 0 4px 10px; }
+.menu-mensagem-emoji {
+    background: none;
+    border: none;
+    font-size: 21px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 8px;
+    transition: .15s;
+}
+.menu-mensagem-emoji:hover, .menu-mensagem-emoji:active {
+    background: var(--bg-hover);
+    transform: scale(1.2);
+}
+
+/* =========================================================
    📥 CARTÕES DA CAIXA DE ENTRADA
 ========================================================= */
 .chat-linha-topo { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }

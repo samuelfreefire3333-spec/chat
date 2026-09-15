@@ -46,6 +46,11 @@
             height: 15px;             
             opacity: .7;         
         }         
+        .inbox-header-acoes {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
         .inbox-header .icon-edit {             
             width: 22px;             
             height: 22px;             
@@ -290,7 +295,12 @@
         <aside class="inbox-panel">             
             <header class="inbox-header">                 
                 <h1 id="headerNomeUsuario">carregando... <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg></h1>                 
-                <a href="explorar.html" class="icon-edit-link" aria-label="Nova conversa"><svg class="icon-edit" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>             
+                <div class="inbox-header-acoes">
+                    <a href="grupo-novo.html" class="icon-edit-link" aria-label="Novo grupo" title="Novo grupo">
+                        <svg class="icon-edit" aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    </a>
+                    <a href="explorar.html" class="icon-edit-link" aria-label="Nova conversa"><svg class="icon-edit" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></a>             
+                </div>
             </header>             
             
             <div class="messages-title">                 

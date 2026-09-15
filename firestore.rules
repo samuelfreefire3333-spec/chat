@@ -1,26 +1,25 @@
 rules_version = '2';
 
 // Regras de segurança do Sinex Chat.
-//
 // Premissa: todo o acesso ao banco vem direto do navegador. Portanto estas
 // regras — e não o código JavaScript — são a única barreira real. Nada aqui
 // deve depender de checagens feitas no cliente.
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
+    
     function autenticado() {
       return request.auth != null;
     }
-
+    
     function ehAdmin() {
       return autenticado() && request.auth.token.admin == true;
     }
-
+    
     function meuUID() {
       return request.auth.uid;
     }
-
+    
     // Campos que o dono do perfil pode alterar. status e role ficam de fora
     // de propósito: quem muda isso é um admin.
     function camposDePerfilPermitidos() {
@@ -31,7 +30,7 @@ service cloud.firestore {
     match /usuarios/{username} {
       // O perfil é público para quem está logado (busca, lista de contatos).
       allow read: if autenticado();
-
+      
       // No cadastro: o documento precisa pertencer a quem está criando,
       // o ID do documento tem que bater com o campo usuario, e ninguém
       // se cria admin.
@@ -40,11 +39,11 @@ service cloud.firestore {
         && request.resource.data.usuario == username
         && username.matches('^[a-z0-9._-]{3,30}$')
         && !request.resource.data.keys().hasAny(['role', 'status', 'banido']);
-
+        
       // O dono edita só os campos dele; o admin pode moderar qualquer conta.
       allow update: if ehAdmin()
         || (autenticado() && resource.data.uid == meuUID() && camposDePerfilPermitidos());
-
+        
       // Ninguém apaga perfil pelo cliente.
       allow delete: if false;
     }
@@ -54,14 +53,12 @@ service cloud.firestore {
     // Cada aresta só pode ser criada ou removida por quem segue.
     match /seguidores/{arestaId} {
       allow read: if autenticado();
-
       allow create: if autenticado()
         && request.resource.data.seguidorUid == meuUID()
         && arestaId == request.resource.data.seguidor + '_' + request.resource.data.seguindo
         && request.resource.data.seguidor != request.resource.data.seguindo;
-
       allow delete: if autenticado() && resource.data.seguidorUid == meuUID();
-
+      
       // Uma aresta não se edita: cria ou apaga.
       allow update: if false;
     }
@@ -70,27 +67,27 @@ service cloud.firestore {
       function souParticipante() {
         return autenticado() && meuUID() in resource.data.uids;
       }
-
+      
       function viraiParticipante() {
         return autenticado()
           && meuUID() in request.resource.data.uids
-          && request.resource.data.uids.size() == 2
-          && request.resource.data.usuarios.size() == 2;
+          && request.resource.data.uids.size() >= 2
+          && request.resource.data.uids.size() <= 20
+          && request.resource.data.usuarios.size() == request.resource.data.uids.size();
       }
 
       // CORREÇÃO AQUI: Dividimos o read em get (documento único) e list (queries).
-      // Permitimos o `get` se o documento for null. Isso retorna um NotFound 
-      // (ao invés de Permission Denied) para o `getDoc` no momento em que você 
+      // Permitimos o `get` se o documento for null. Isso retorna um NotFound
+      // (ao invés de Permission Denied) para o `getDoc` no momento em que você
       // chama a função garantirChat() para uma conversa que ainda não foi criada.
       allow get: if resource == null || souParticipante();
       allow list: if souParticipante();
       
       allow create: if viraiParticipante();
-
+      
       // A lista de participantes é imutável depois de criada.
       allow update: if souParticipante()
         && request.resource.data.uids == resource.data.uids;
-
       allow delete: if souParticipante();
 
       match /mensagens/{mensagemId} {
@@ -98,22 +95,22 @@ service cloud.firestore {
           return autenticado()
             && meuUID() in get(/databases/$(database)/documents/chats/$(chatId)).data.uids;
         }
-
+        
         allow read: if participanteDoChat();
-
+        
         // CORREÇÃO AQUI: `is timestamp` previne bugs do `request.time`
         // caso o SDK gere um timestamp simulado no cache local antes da rede voltar.
         allow create: if participanteDoChat()
           && request.resource.data.remetenteUid == meuUID()
           && request.resource.data.timestamp is timestamp;
-
+          
         // Mensagem enviada não se reescreve; apagar fica com o remetente.
         allow update: if false;
         allow delete: if participanteDoChat() && resource.data.remetenteUid == meuUID();
       }
     }
 
-    // Qualquer coleção não declarada acima é negada por padrão.
+    // Qualquer coleção declarada acima é negada por padrão
     match /{document=**} {
       allow read, write: if false;
     }

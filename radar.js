@@ -3,6 +3,10 @@ import { registrarEventoDeChamada } from "./mensagens.js";
 
 const URL_BACKEND = "wss://sinex-backend-go.onrender.com/ws";
 
+// Mesmo host do WebSocket, mas em HTTP — usado pelos poucos endpoints
+// administrativos do backend (hoje só /admin/kick, ver admin.js).
+export const URL_BACKEND_HTTP = "https://sinex-backend-go.onrender.com";
+
 const DURACAO_CHAMADA = 30000; // tempo para atender antes de virar perdida
 const BACKOFF_MIN = 1000;
 const BACKOFF_MAX = 30000;
@@ -189,8 +193,16 @@ function tocarNotificacao() {
 function tratarMensagem(msg) {
   if (msg.type === "chat") {
     const params = new URLSearchParams(window.location.search);
-    const estouNesteChat =
-      window.location.pathname.includes("chat.html") && params.get("u") === msg.from;
+    const naPaginaDeChat = window.location.pathname.includes("chat.html");
+
+    // Chat direto: sabemos que é a conversa aberta comparando "u=" com quem
+    // mandou. Em grupo não dá pra usar "from" (várias pessoas mandam na
+    // mesma conversa), então o remetente manda o chatId junto no payload e
+    // comparamos com "g=" da URL.
+    const chatIdDaMensagem = msg.payload?.chatId;
+    const estouNesteChatDireto = params.get("u") === msg.from;
+    const estouNesteGrupo = !!params.get("g") && params.get("g") === chatIdDaMensagem;
+    const estouNesteChat = naPaginaDeChat && (estouNesteChatDireto || estouNesteGrupo);
 
     if (!estouNesteChat) {
       const naoLidas = (parseInt(localStorage.getItem("naoLidas"), 10) || 0) + 1;

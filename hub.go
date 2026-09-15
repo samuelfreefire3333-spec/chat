@@ -51,6 +51,10 @@ type Hub struct {
 	Broadcast  chan entrega
 	Direto     chan envioDireto
 
+	// Kick força a desconexão de todas as abas de um usuário — usado pelo
+	// endpoint administrativo de banimento (ver main.go, /admin/kick).
+	Kick chan string
+
 	identity *Identity
 }
 
@@ -61,7 +65,20 @@ func NovoHub(identity *Identity) *Hub {
 		Unregister: make(chan *Client, 64),
 		Broadcast:  make(chan entrega, 256),
 		Direto:     make(chan envioDireto, 256),
+		Kick:       make(chan string, 64),
 		identity:   identity,
+	}
+}
+
+// DesconectarUsuario agenda o fechamento de todas as abas de um usuário.
+// Seguro pra chamar de qualquer goroutine (por exemplo, de um handler HTTP) —
+// só a goroutine Run toca o mapa de conexões de verdade; isso apenas
+// enfileira o pedido.
+func (h *Hub) DesconectarUsuario(username string) {
+	select {
+	case h.Kick <- username:
+	default:
+		log.Printf("[hub] fila de kick cheia, descartando pedido para %s", username)
 	}
 }
 
@@ -153,6 +170,14 @@ func (h *Hub) Run() {
 
 		case client := <-h.Unregister:
 			h.remover(client)
+
+		case username := <-h.Kick:
+			// Sem isso, uma conta banida com uma aba já aberta continuava
+			// conectada normalmente até o token expirar (até 1h) — o banimento
+			// só valia pra próxima tentativa de handshake.
+			for c := range copiar(h.Clients[username]) {
+				h.remover(c)
+			}
 
 		case e := <-h.Broadcast:
 			h.rotear(e)

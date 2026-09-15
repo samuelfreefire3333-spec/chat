@@ -55,14 +55,18 @@ async function buscar(termo) {
   const estaBusca = ++buscaEmCurso;
 
   try {
-    // Busca por prefixo: U+F8FF fica no fim da area de uso privado, entao o
-    // intervalo [termo, termo+U+F8FF] pega tudo que comeca com o digitado.
+    // Busca por prefixo: U+F8FF fica no fim da área de uso privado, então o
+    // intervalo [termo, termo+U+F8FF] pega tudo que começa com o digitado.
+    //
+    // O endAt() estava sem o sufixo U+F8FF (endAt(`${termo}`) é só o próprio
+    // termo), então a consulta só batia com usuário == termo exato — a busca
+    // "por prefixo" na prática só funcionava para o nome de usuário completo.
     const snap = await getDocs(
       query(
         collection(db, "usuarios"),
         orderBy("usuario"),
         startAt(termo),
-        endAt(`${termo}`),
+        endAt(`${termo}\uf8ff`),
         limit(20)
       )
     );
