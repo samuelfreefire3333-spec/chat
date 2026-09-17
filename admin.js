@@ -3,6 +3,7 @@ import {
   collection, query, orderBy, limit, startAfter, getDocs, doc, updateDoc, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import Core, { sessao, definirAvatar, montarAvatarNav } from "./core.js";
+import { URL_BACKEND_HTTP } from "./radar.js";
 
 // ==========================================================================
 // PAINEL ADMINISTRATIVO
@@ -98,8 +99,12 @@ async function alterarStatus(usuario, novoStatus, btn, card) {
   try {
     await updateDoc(doc(db, "usuarios", usuario), { status: novoStatus });
 
-    // O backend derruba a conexão de quem foi banido na próxima tentativa,
-    // porque Identity.Verificar recusa contas com status banido/suspenso.
+    // Além de bloquear a PRÓXIMA tentativa de handshake (Identity.Verificar
+    // já recusava conta banida/suspensa), avisamos o backend pra derrubar
+    // AGORA qualquer aba que a pessoa já tenha aberta. Sem isso, quem já
+    // estava conectado seguia normalmente até o token expirar (até 1h).
+    if (banindo) await desconectarSessaoAtiva(usuario);
+
     Core.aviso(
       banindo ? `@${usuario} foi banido.` : `@${usuario} foi reativado.`,
       "#00a884"
@@ -115,6 +120,29 @@ async function alterarStatus(usuario, novoStatus, btn, card) {
     console.error("Erro ao alterar status:", erro);
     Core.aviso("Permissão negada pelo servidor.", "#ed4956");
     btn.disabled = false;
+  }
+}
+
+/**
+ * Pede ao backend Go pra fechar qualquer conexão WebSocket ativa de
+ * `usuario`. Falha aqui não desfaz o banimento — ele já está gravado no
+ * Firestore — só significa que a sessão em aberto (se existir) vai durar
+ * até expirar sozinha em vez de cair na hora. Por isso o erro é só logado,
+ * nunca interrompe o fluxo de banir.
+ */
+async function desconectarSessaoAtiva(usuario) {
+  try {
+    const token = await sessaoAtual.user.getIdToken();
+    const resposta = await fetch(`${URL_BACKEND_HTTP}/admin/kick`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ username: usuario }),
+    });
+    if (!resposta.ok) {
+      console.warn(`/admin/kick respondeu ${resposta.status} para @${usuario}`);
+    }
+  } catch (erro) {
+    console.error("Não foi possível desconectar a sessão ativa:", erro);
   }
 }
 

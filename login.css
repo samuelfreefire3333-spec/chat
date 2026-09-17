@@ -1,0 +1,123 @@
+.auth-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100vw;
+            height: 100dvh;
+            background: var(--bg-main);
+            padding: 20px;
+        }
+
+        .auth-box {
+            width: 100%;
+            max-width: 400px;
+            background: var(--bg-panel-2);
+            padding: 45px 30px;
+            border-radius: 24px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-soft);
+            text-align: center;
+            animation: popIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        @keyframes popIn {
+            from { opacity: 0; transform: scale(0.95) translateY(10px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .auth-logo {
+            font-size: 46px;
+            font-weight: 900;
+            font-style: italic;
+            letter-spacing: -3px;
+            color: var(--text-main);
+            margin-bottom: 5px;
+        }
+        .auth-logo span {
+            color: var(--primary-accent);
+        }
+        
+        .auth-subtitle {
+            color: var(--text-sec);
+            font-size: 14px;
+            margin-bottom: 35px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        .input-group {
+            margin-bottom: 18px;
+            text-align: left;
+        }
+        .input-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-sec);
+            margin-bottom: 8px;
+            margin-left: 4px;
+        }
+        .input-field {
+            width: 100%;
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 15px 18px;
+            border-radius: 14px;
+            font-size: 15px;
+            outline: none;
+            transition: 0.2s;
+        }
+        .input-field:focus {
+            border-color: var(--primary-accent);
+            box-shadow: 0 0 0 3px rgba(230,0,43,0.1);
+        }
+        .input-field::placeholder {
+            color: var(--border-color);
+        }
+
+        .btn-login {
+            width: 100%;
+            background: var(--primary-accent);
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 14px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-top: 10px;
+            box-shadow: var(--primary-glow);
+        }
+        .btn-login:hover {
+            background: var(--primary-accent-2);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(230, 0, 43, 0.35);
+        }
+        .btn-login:active {
+            transform: scale(0.97);
+        }
+        .btn-login:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .auth-links {
+            margin-top: 30px;
+            font-size: 14px;
+            color: var(--text-sec);
+        }
+        .auth-links a {
+            color: var(--text-main);
+            text-decoration: none;
+            font-weight: 700;
+            transition: 0.2s;
+        }
+        .auth-links a:hover {
+            color: var(--primary-accent);
+        }
+
+        #toast-aviso { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--primary-accent); color: white; padding: 12px 24px; border-radius: 30px; font-size: 14px; font-weight: 700; opacity: 0; visibility: hidden; transition: all 0.3s ease; z-index: 9999; box-shadow: 0 4px 15px rgba(230,0,43,0.4); white-space: nowrap; }         
+        #toast-aviso.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }

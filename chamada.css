@@ -1,0 +1,157 @@
+.call-wrapper {
+            position: relative;
+            width: 100vw;
+            height: 100dvh;
+            background: var(--bg-main);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Camadas de Vídeo (WebRTC) */
+        .video-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            background: #000; /* Fundo sempre preto no vídeo para imersão */
+            display: none; /* Escondido por padrão, ativado via JS se for vídeo */
+        }
+        #videoRemoto {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .local-video-container {
+            position: absolute;
+            top: calc(20px + env(safe-area-inset-top));
+            right: 20px;
+            width: 100px;
+            height: 150px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid rgba(255,255,255,0.2);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            z-index: 5;
+            background: #111;
+        }
+        #videoLocal {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Efeito espelho na sua própria câmera */
+        }
+
+        /* Interface de Áudio / UI sobreposta */
+        .call-ui {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            padding: calc(40px + env(safe-area-inset-top)) 20px calc(40px + env(safe-area-inset-bottom));
+            background: linear-gradient(180deg, var(--bg-panel) 0%, transparent 20%, transparent 80%, var(--bg-panel) 100%);
+        }
+
+        /* Efeito de Pulso (Sonar) no Avatar */
+        .avatar-container {
+            position: relative;
+            margin-top: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .avatar-pulse {
+            position: absolute;
+            width: 130px;
+            height: 130px;
+            background: var(--primary-accent);
+            border-radius: 50%;
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+            z-index: -1;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.9); opacity: 0.6; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+        .call-avatar {
+            width: 130px;
+            height: 130px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 4px solid var(--bg-main);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            position: relative;
+            z-index: 2;
+        }
+
+        .call-info {
+            text-align: center;
+            margin-top: 30px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5); /* Garante leitura mesmo sobre o vídeo */
+        }
+        .call-name {
+            font-size: 26px;
+            font-weight: 800;
+            color: var(--text-main);
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+        .call-status {
+            font-size: 16px;
+            color: var(--text-sec);
+            font-weight: 500;
+        }
+
+        /* Controles da Chamada */
+        .call-controls {
+            display: flex;
+            gap: 25px;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .btn-control {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #fff;
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        .btn-control:hover { background: rgba(255,255,255,0.25); transform: translateY(-3px); }
+        .btn-control:active { transform: scale(0.9); }
+        .btn-control.active-muted { background: #fff; color: #111; }
+        
+        .btn-end-call {
+            width: 72px;
+            height: 72px;
+            background: #ff123c;
+            box-shadow: 0 8px 24px rgba(255, 18, 60, 0.4);
+        }
+        .btn-end-call:hover { background: #e6002b; }
+
+        /* Ajuste específico de cor no tema claro para a UI sobreposta */
+        .light-theme .call-ui {
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.4) 20%, rgba(255,255,255,0.4) 80%, rgba(255,255,255,0.9) 100%);
+        }
+        .light-theme .btn-control { background: rgba(0,0,0,0.1); color: #111; }
+        .light-theme .btn-control.active-muted { background: #111; color: #fff; }
+        .light-theme .btn-end-call { color: #fff; }
+/* Classes que substituem atributos style="" removidos do HTML (ver CSP). */
+.chamada-coluna-central { display: flex; flex-direction: column; align-items: center; }
+.chamada-topo-placeholder { width: 100%; display: flex; justify-content: flex-start; }

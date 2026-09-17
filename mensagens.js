@@ -1,7 +1,7 @@
 import { db } from "./firebase.js";
 import {
   doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc, deleteField, collection, query,
-  orderBy, limit, onSnapshot, getDocs, serverTimestamp, writeBatch
+  orderBy, limit, startAfter, onSnapshot, getDocs, serverTimestamp, writeBatch, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { idDoChat, buscarPerfilPorUsername, paraMillis } from "./core.js";
 
@@ -17,6 +17,7 @@ import { idDoChat, buscarPerfilPorUsername, paraMillis } from "./core.js";
 // mensagens, reações, respostas — é o mesmo para os dois casos.
 
 export const LIMITE_HISTORICO = 200;
+export const TAMANHO_PAGINA_HISTORICO = 50; // quantas mensagens "carregar mais" busca por vez
 export const MINIMO_MEMBROS_GRUPO = 3; // eu + pelo menos 2 pessoas
 export const MAXIMO_MEMBROS_GRUPO = 20; // ver nota de escalabilidade em enviar() no chat.js
 
@@ -223,6 +224,18 @@ export async function reagirMensagem(chatId, mensagemId, uid, emojiAtual, emojiE
   }
 }
 
+/** Converte um QueryDocumentSnapshot de mensagem no formato que a UI usa. */
+function paraMensagem(d) {
+  const dados = d.data();
+  return {
+    id: d.id,
+    ...dados,
+    // Enquanto o servidor não confirma, timestamp vem null.
+    timestampMs: paraMillis(dados.timestamp),
+    pendente: dados.timestamp === null,
+  };
+}
+
 /**
  * Escuta o histórico recente em ordem cronológica.
  * Retorna a função de cancelamento do listener.
@@ -239,21 +252,35 @@ export function escutarMensagens(chatId, aoAtualizar, { maximo = LIMITE_HISTORIC
   return onSnapshot(
     q,
     (snap) => {
-      const lista = snap.docs.map((d) => {
-        const dados = d.data();
-        return {
-          id: d.id,
-          ...dados,
-          // Enquanto o servidor não confirma, timestamp vem null.
-          timestampMs: paraMillis(dados.timestamp),
-          pendente: dados.timestamp === null,
-        };
-      });
+      const lista = snap.docs.map(paraMensagem);
       lista.reverse();
       aoAtualizar(lista);
     },
     (err) => console.error("Erro ao escutar mensagens:", err)
   );
+}
+
+/**
+ * Busca uma página de mensagens mais antigas que `antesDeMs`, pra alimentar o
+ * "carregar mensagens anteriores" no topo da conversa. Diferente de
+ * escutarMensagens(), isto é uma consulta única (getDocs), não um listener —
+ * histórico antigo não muda, não precisa ficar sendo re-observado.
+ *
+ * Retorna em ordem cronológica (mais antiga primeiro), pronta pra ser
+ * colocada na frente da lista já carregada.
+ */
+export async function carregarMensagensAntigas(chatId, antesDeMs, quantidade = TAMANHO_PAGINA_HISTORICO) {
+  const q = query(
+    collection(db, "chats", chatId, "mensagens"),
+    orderBy("timestamp", "desc"),
+    startAfter(Timestamp.fromMillis(antesDeMs)),
+    limit(quantidade)
+  );
+
+  const snap = await getDocs(q);
+  const lista = snap.docs.map(paraMensagem);
+  lista.reverse();
+  return lista;
 }
 
 /**

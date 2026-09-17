@@ -1,0 +1,54 @@
+.profile-panel { flex: 1; display: flex; flex-direction: column; width: 100%; background-color: var(--bg-main); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        
+        .profile-header-top { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; position: sticky; top: 0; background: var(--bg-main); z-index: 10; padding-top: calc(16px + env(safe-area-inset-top)); }
+        .header-left { display: flex; align-items: center; gap: 16px; }
+        
+        .btn-back { background: none; border: none; color: var(--text-main); font-size: 24px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; transition: transform 0.2s; outline: none; }
+        .btn-back:active { transform: scale(0.9); }
+        
+        /* Capa Premium e Layout */
+        .profile-content { padding: 0; max-width: 600px; margin: 0 auto; width: 100%; animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .profile-cover { width: 100%; height: 140px; background: linear-gradient(135deg, var(--primary-accent), var(--primary-accent-2)); border-radius: 0 0 24px 24px; position: relative; z-index: 1; }
+        .profile-info-row { display: flex; align-items: flex-end; justify-content: space-between; margin-top: -50px; margin-bottom: 24px; position: relative; z-index: 2; padding: 0 20px; }
+        .profile-avatar { width: 96px; height: 96px; border-radius: 50%; object-fit: cover; border: 4px solid var(--bg-main); background-color: var(--bg-main); flex-shrink: 0; box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+        
+        .profile-stats { display: flex; gap: 20px; text-align: center; flex-grow: 1; justify-content: flex-end; padding-bottom: 10px; }
+        .stat-item { cursor: pointer; transition: opacity 0.2s; }
+        .stat-item:active { opacity: 0.5; }
+        .stat-value { font-weight: 700; font-size: 17px; color: var(--text-main); }
+        .stat-label { font-size: 13px; color: var(--text-sec); margin-top: 2px; }
+        
+        .profile-bio-box, .profile-actions { padding: 0 20px; }
+        .profile-bio-box { margin-bottom: 20px; word-break: break-word; }
+        .profile-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+        .profile-bio { font-size: 14px; color: var(--text-sec); line-height: 1.4; white-space: pre-wrap; }
+        
+        .profile-actions { display: flex; gap: 8px; margin-bottom: 30px; }
+        .btn-profile-action { flex: 1; background: var(--bg-panel-2); color: var(--text-main); border: 1px solid var(--border-color); padding: 8px 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s; text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; outline: none; }
+        .btn-profile-action:active { transform: scale(0.96); }
+        #btnSeguirPerfil { background: var(--primary-accent); color: white; border: none; }
+        #btnSeguirPerfil:hover { background: var(--primary-accent-2); }
+        
+        /* Modais */
+        #overlayHamburguer { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); z-index: 999; opacity: 0; transition: opacity 0.3s ease; }
+        #menuHamburguer { display: flex; position: fixed; bottom: -100%; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--bg-panel); border-top-left-radius: 20px; border-top-right-radius: 20px; z-index: 1000; flex-direction: column; transition: bottom 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); border-top: 1px solid var(--border-color); padding-bottom: calc(20px + env(safe-area-inset-bottom)); box-shadow: 0 -10px 40px rgba(0,0,0,0.3); }
+        
+        #modalListaUsuarios { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 2000; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+        .modal-box { background: var(--bg-panel); width: 90%; max-width: 400px; height: 75vh; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; border: 1px solid var(--border-color); box-shadow: 0 15px 35px rgba(0,0,0,0.4); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 12px; }
+        .modal-close-btn { background: none; border: none; font-size: 22px; color: var(--text-main); cursor: pointer; padding: 0; transition: transform 0.2s; }
+        .modal-close-btn:active { transform: scale(0.8); }
+        
+        @media (min-width: 850px) {
+            .profile-panel { max-width: 650px; border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color); margin: 0 auto; }
+        }
+/* Classes que substituem atributos style="" removidos do HTML (ver CSP). */
+.btn-menu-opcoes { background: none; border: none; font-size: 24px; color: var(--text-main); cursor: pointer; font-weight: bold; }
+.texto-username-cabecalho { font-size: 16px; font-weight: 700; }
+.modal-lista-conteudo { flex-grow: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.modal-lista-titulo { font-size: 16px; font-weight: 700; margin: 0; }
+.menu-hamburguer-alca { width: 40px; height: 4px; background: var(--border-color); border-radius: 2px; margin: 12px auto 16px auto; }
+.menu-hamburguer-item { padding: 14px 20px; cursor: pointer; display: flex; align-items: center; gap: 12px; font-weight: 600; }
+.menu-hamburguer-item-perigo { padding: 14px 20px; cursor: pointer; display: flex; align-items: center; gap: 12px; color: var(--primary-accent); font-weight: 600; }

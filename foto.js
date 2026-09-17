@@ -84,10 +84,14 @@ async function salvarFoto() {
   btnSalvar.disabled = true;
 
   try {
-    // O caminho inclui o uid: é assim que as regras do Storage sabem que o
-    // arquivo é de quem está enviando.
+    // O uid está no caminho: é assim que as regras do Storage sabem que o
+    // arquivo é de quem está enviando. cacheControl agressivo porque cada
+    // envio gera um nome novo (Date.now()) — o conteúdo nunca muda depois.
     const destino = ref(storage, `avatares/${sessaoAtual.user.uid}/${Date.now()}.jpg`);
-    await uploadBytes(destino, blobFinal, { contentType: "image/jpeg" });
+    await uploadBytes(destino, blobFinal, {
+      contentType: "image/jpeg",
+      cacheControl: "public, max-age=31536000, immutable",
+    });
     const url = await getDownloadURL(destino);
 
     await updateDoc(doc(db, "usuarios", sessaoAtual.perfil.id), { foto: url });

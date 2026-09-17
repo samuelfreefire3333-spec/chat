@@ -220,6 +220,21 @@ html, body {
 /* =========================================================
    💬 MENSAGENS: SISTEMA, SEPARADOR E MÍDIA
 ========================================================= */
+.btn-carregar-mais {
+    align-self: center;
+    margin: 4px 0 12px;
+    padding: 8px 16px;
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    color: var(--text-sec);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    border-radius: 999px;
+    transition: 0.2s;
+}
+.btn-carregar-mais:hover { color: var(--text-main); border-color: var(--primary-accent); }
+.btn-carregar-mais:disabled { opacity: 0.6; cursor: default; }
 .msg-sistema {
     align-self: center;
     max-width: 80%;
@@ -688,3 +703,18 @@ html, body {
     visibility: visible;
     transform: translateX(-50%) translateY(0);
 }
+
+/* =========================================================
+   UTILITARIOS
+   Substituem atributos style="..." que existiam no HTML de
+   varias paginas. O CSP (firebase.json) nao libera mais
+   'unsafe-inline' em style-src, entao todo style inline
+   precisou virar classe — aqui ficam so as que se repetem em
+   mais de uma tela; as especificas de uma unica tela vivem no
+   <pagina>.css dela.
+========================================================= */
+.u-hidden { display: none; }
+.nav-item-final { margin-top: auto; margin-bottom: 20px; cursor: pointer; }
+.nav-item-elevado { position: relative; z-index: 9999; }
+.titulo-cabecalho { font-size: 18px; color: var(--text-main); }
+.texto-acento { color: var(--primary-accent); }

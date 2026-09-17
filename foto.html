@@ -12,117 +12,8 @@
     <link rel="manifest" href="manifest.json">          
     
     <!-- ESTILOS EXCLUSIVOS DA TELA DE FOTO -->
-    <style>         
-        .photo-panel { 
-            flex: 1; 
-            display: flex; 
-            flex-direction: column; 
-            width: 100%; 
-            background-color: var(--bg-main); 
-            overflow-y: auto; 
-            align-items: center; 
-            justify-content: center; 
-            position: relative;
-        }         
-        
-        .photo-header { 
-            width: 100%; 
-            height: 70px; 
-            display: flex; 
-            align-items: center; 
-            padding: 0 20px; 
-            border-bottom: 1px solid var(--border-color); 
-            position: absolute; 
-            top: 0; 
-            left: 0; 
-            background: var(--bg-main);
-            padding-top: env(safe-area-inset-top);
-        }         
-        
-        .btn-back { 
-            background: none; 
-            border: none; 
-            color: var(--text-main); 
-            font-size: 24px; 
-            cursor: pointer; 
-            transition: 0.2s; 
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }         
-        .btn-back:active { transform: scale(0.9); }         
-        
-        .photo-container { 
-            width: 100%; 
-            max-width: 400px; 
-            padding: 30px; 
-            text-align: center; 
-            margin-top: 50px; 
-            animation: fadeIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-        }         
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(15px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .photo-preview-box { 
-            width: 200px; 
-            height: 200px; 
-            border-radius: 50%; 
-            border: 4px solid var(--primary-accent); 
-            margin: 0 auto 35px; 
-            overflow: hidden; 
-            position: relative; 
-            background: var(--bg-panel-2); 
-            box-shadow: var(--primary-glow); 
-        }         
-        .photo-preview-box img { 
-            width: 100%; 
-            height: 100%; 
-            object-fit: cover; 
-            transition: opacity 0.3s;
-        }         
-        
-        .btn-action { 
-            width: 100%; 
-            padding: 16px; 
-            border-radius: 14px; 
-            font-size: 15px; 
-            font-weight: 700; 
-            cursor: pointer; 
-            transition: 0.2s; 
-            margin-bottom: 14px; 
-            border: none; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            gap: 10px; 
-        }         
-        .btn-primary { 
-            background: var(--primary-accent); 
-            color: white; 
-            box-shadow: var(--primary-glow); 
-        }         
-        .btn-primary:hover { 
-            background: var(--primary-accent-2); 
-            transform: translateY(-2px); 
-        }         
-        .btn-primary:active { transform: scale(0.97); }
-
-        .btn-secondary { 
-            background: var(--bg-panel-2); 
-            color: var(--text-main); 
-            border: 1px solid var(--border-color); 
-        }         
-        .btn-secondary:hover { background: var(--bg-hover); }         
-        .btn-secondary:active { transform: scale(0.97); }
-
-        #fileInput { display: none; }         
-        
-        #toast-aviso { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--primary-accent); color: white; padding: 12px 24px; border-radius: 30px; font-size: 14px; font-weight: 700; opacity: 0; visibility: hidden; transition: all 0.3s ease; z-index: 9999; box-shadow: 0 4px 15px rgba(230,0,43,0.4); white-space: nowrap; }         
-        #toast-aviso.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }         
-    </style> 
+    <link rel="stylesheet" href="foto.css">
+ 
 </head> 
 <body>     
     <div class="app-layout">                  
@@ -131,7 +22,7 @@
                 <button class="btn-back" type="button" data-acao="voltar" aria-label="Voltar">                     
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>                 
                 </button>                 
-                <strong style="margin-left: 15px; font-size: 18px; color: var(--text-main);">Foto de Perfil</strong>             
+                <strong class="titulo-cabecalho foto-titulo-recuo">Foto de Perfil</strong>             
             </header>             
             
             <div class="photo-container">                 
@@ -139,8 +30,8 @@
                     <img id="previewImg" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Preview">                 
                 </div>                 
                 
-                <h2 style="margin-bottom: 8px; font-weight: 800; font-size: 22px;">Atualizar Foto</h2>                 
-                <p style="color: var(--text-sec); font-size: 14px; margin-bottom: 30px;">Escolha uma nova imagem para destacar o seu perfil no chat.</p>                 
+                <h2 class="foto-titulo">Atualizar Foto</h2>                 
+                <p class="foto-subtitulo">Escolha uma nova imagem para destacar o seu perfil no chat.</p>                 
                 
                 <input type="file" id="fileInput" accept="image/*">                 
                 
@@ -149,7 +40,7 @@
                     Escolher da Galeria                 
                 </button>                 
                 
-                <button id="btnSalvar" class="btn-action btn-primary" type="button" style="display: none;">                     
+                <button id="btnSalvar" class="btn-action btn-primary u-hidden" type="button">                     
                     Salvar Nova Foto                 
                 </button>             
             </div>         

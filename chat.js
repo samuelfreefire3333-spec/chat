@@ -7,7 +7,7 @@ import Core, {
 import Radar from "./radar.js";
 import {
   escutarMensagens, enviarMensagem, enviarMensagemNoGrupo, garantirChat,
-  obterChat, reagirMensagem, resumo
+  obterChat, reagirMensagem, resumo, carregarMensagensAntigas, TAMANHO_PAGINA_HISTORICO
 } from "./mensagens.js";
 
 const params = new URLSearchParams(window.location.search);
@@ -36,6 +36,24 @@ let fotoDoContato = AVATAR_PADRAO;
 let pararDeEscutar = null;
 let timerStatus = null;
 let ultimoTsRenderizado = 0;
+
+// Estado do que já está desenhado na tela, pro diff de atualizarDOM(): id da
+// mensagem -> { elemento, assinatura }. "elemento" é o nó de mais alto nível
+// já inserido em #mensagens (a .msg-coluna, ou o .msg-wrapper-other que a
+// envolve num chat direto) e "assinatura" resume o conteúdo renderizado, pra
+// saber se aquela mensagem específica precisa ser redesenhada.
+const rendorizadas = new Map();
+let ultimoDiaRenderizado = null;
+
+// Paginação do histórico: escutarMensagens() mantém a "janela ao vivo" (as
+// LIMITE_HISTORICO mais recentes, em tempo real); carregarMaisAntigas() vai
+// empilhando páginas mais antigas na frente dela — essas não mudam mais,
+// então não precisam de listener, só de uma busca pontual.
+let mensagensAoVivo = [];
+let historicoAntigo = [];
+let carregandoHistorico = false;
+let todoHistoricoCarregado = false;
+let elBtnCarregarMais = null;
 
 // Grupo: lista de participantes (todos, incluindo eu) e nomes de exibição
 // conhecidos (contato direto ou membros do grupo) — usados nas bolhas e nas
@@ -398,29 +416,183 @@ function separadorDeData(ms) {
   return div;
 }
 
+// Assinatura barata do que foi desenhado pra uma mensagem — usada só pra
+// decidir se ela precisa ser redesenhada (mudou reação, texto de citação,
+// ou saiu do estado "enviando..." pra confirmada), sem comparar DOM.
+function assinaturaDe(msg) {
+  return JSON.stringify([
+    msg.texto, msg.tipo, msg.pendente, msg.timestampMs,
+    msg.reacoes, msg.respostaId, msg.respostaTexto,
+  ]);
+}
+
+/** Insere um nó logo antes do indicador de "digitando", que fica sempre por
+ *  último em #mensagens (ver mostrarDigitando/atualizarDOM). */
+function inserirAntesDoIndicador(no) {
+  if (elDigitando?.parentElement === elMensagens) {
+    elMensagens.insertBefore(no, elDigitando);
+  } else {
+    elMensagens.appendChild(no);
+  }
+}
+
+function inserirMensagem(msg) {
+  const ms = msg.timestampMs || Date.now();
+  const dia = new Date(ms).toDateString();
+  if (dia !== ultimoDiaRenderizado) {
+    inserirAntesDoIndicador(separadorDeData(ms));
+    ultimoDiaRenderizado = dia;
+  }
+
+  const souEu = msg.remetenteUid === sessaoAtual.user.uid;
+  const no = renderizarMensagem(msg, souEu);
+  inserirAntesDoIndicador(no);
+  rendorizadas.set(msg.id, { elemento: no, assinatura: assinaturaDe(msg) });
+}
+
+/** Cria (uma vez) o botão "carregar mensagens anteriores" do topo. */
+function elementoCarregarMais() {
+  if (elBtnCarregarMais) return elBtnCarregarMais;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = "btnCarregarMaisAntigas";
+  btn.className = "btn-carregar-mais";
+  btn.textContent = "Carregar mensagens anteriores";
+  btn.addEventListener("click", carregarMaisAntigas);
+
+  elBtnCarregarMais = btn;
+  return btn;
+}
+
+function atualizarBotaoCarregarMais() {
+  if (!elBtnCarregarMais) return;
+  if (todoHistoricoCarregado) {
+    elBtnCarregarMais.style.display = "none";
+    return;
+  }
+  elBtnCarregarMais.style.display = "block";
+  elBtnCarregarMais.disabled = carregandoHistorico;
+  elBtnCarregarMais.textContent = carregandoHistorico
+    ? "Carregando..."
+    : "Carregar mensagens anteriores";
+}
+
+/** Reconstrói tudo do zero — usada na primeira carga do chat e sempre que o
+ *  diff incremental não dá pra aplicar com segurança (ver atualizarDOM). */
+function reconstruirTudo(mensagens) {
+  elMensagens.replaceChildren();
+  rendorizadas.clear();
+  ultimoDiaRenderizado = null;
+
+  // Grupos ainda não têm histórico paginável hoje — carregarMensagensAntigas
+  // já funciona pra grupo (é a mesma subcoleção), mas o botão só aparece pra
+  // quem realmente pode ter mais de LIMITE_HISTORICO mensagens acumuladas.
+  elMensagens.appendChild(elementoCarregarMais());
+  atualizarBotaoCarregarMais();
+
+  mensagens.forEach(inserirMensagem);
+
+  if (elDigitando) elMensagens.appendChild(elDigitando);
+}
+
+/** Junta o histórico paginado (estático) com a janela ao vivo, remove
+ *  duplicata na emenda e redesenha. */
+function redesenharComHistorico() {
+  const idsAoVivo = new Set(mensagensAoVivo.map((m) => m.id));
+  const combinadas = [
+    ...historicoAntigo.filter((m) => !idsAoVivo.has(m.id)),
+    ...mensagensAoVivo,
+  ];
+  atualizarDOM(combinadas);
+}
+
+async function carregarMaisAntigas() {
+  if (carregandoHistorico || todoHistoricoCarregado || !chatId) return;
+
+  const maisAntigaCarregada = historicoAntigo[0] || mensagensAoVivo[0];
+  if (!maisAntigaCarregada) return;
+
+  carregandoHistorico = true;
+  atualizarBotaoCarregarMais();
+
+  try {
+    const pagina = await carregarMensagensAntigas(
+      chatId,
+      maisAntigaCarregada.timestampMs,
+      TAMANHO_PAGINA_HISTORICO
+    );
+
+    if (pagina.length < TAMANHO_PAGINA_HISTORICO) todoHistoricoCarregado = true;
+    if (!pagina.length) return;
+
+    const alturaAntes = elMensagens.scrollHeight;
+    historicoAntigo = [...pagina, ...historicoAntigo];
+    redesenharComHistorico();
+
+    // Mantém o trecho que a pessoa estava olhando na mesma posição visual,
+    // em vez de puxar a tela pro topo (ou pro fundo) sozinha.
+    elMensagens.scrollTop += elMensagens.scrollHeight - alturaAntes;
+  } catch (err) {
+    console.error("Erro ao carregar mensagens antigas:", err);
+    Core.aviso("Não foi possível carregar mensagens antigas.", "#ed4956");
+  } finally {
+    carregandoHistorico = false;
+    atualizarBotaoCarregarMais();
+  }
+}
+
+/**
+ * Redesenha a lista de mensagens SEM reconstruir o DOM inteiro a cada
+ * atualização do Firestore — só a mensagem 200 chegando fazia essa função
+ * recriar as outras 199 do zero antes.
+ *
+ * Caminho rápido (o caso de longe mais comum): a lista antiga continua sendo
+ * um prefixo exato da nova — ou seja, nada sumiu nem mudou de posição, só
+ * pode ter (a) conteúdo de mensagens existentes mudado (reação, confirmação
+ * de "enviando..." -> enviada) e/ou (b) mensagens novas no fim. Nesse caso só
+ * tocamos exatamente o que mudou.
+ *
+ * Fora desse caso (primeira carga do chat, ou qualquer coisa que reordene ou
+ * remova algo do meio) cai no reconstruirTudo() de sempre — mais caro, mas
+ * correto, e raro na prática.
+ */
 function atualizarDOM(mensagens) {
   const coladoNoFim =
     elMensagens.scrollHeight - elMensagens.scrollTop - elMensagens.clientHeight < 120;
 
-  // Preserva o indicador de "digitando" entre as re-renderizações.
-  if (elDigitando?.parentElement) elDigitando.remove();
-  elMensagens.replaceChildren();
+  const idsAntigos = [...rendorizadas.keys()];
+  const prefixoIgual =
+    idsAntigos.length > 0 && idsAntigos.every((id, i) => mensagens[i]?.id === id);
 
-  let diaAnterior = null;
+  if (!prefixoIgual) {
+    reconstruirTudo(mensagens);
+  } else {
+    mensagens.slice(0, idsAntigos.length).forEach((msg) => {
+      const registro = rendorizadas.get(msg.id);
+      const assinatura = assinaturaDe(msg);
+      if (registro.assinatura === assinatura) return;
 
-  mensagens.forEach((msg) => {
-    const ms = msg.timestampMs || Date.now();
-    const dia = new Date(ms).toDateString();
-    if (dia !== diaAnterior) {
-      elMensagens.appendChild(separadorDeData(ms));
-      diaAnterior = dia;
-    }
+      const souEu = msg.remetenteUid === sessaoAtual.user.uid;
+      const novoNo = renderizarMensagem(msg, souEu);
+      registro.elemento.replaceWith(novoNo);
+      rendorizadas.set(msg.id, { elemento: novoNo, assinatura });
+    });
 
-    const souEu = msg.remetenteUid === sessaoAtual.user.uid;
-    elMensagens.appendChild(renderizarMensagem(msg, souEu));
-  });
+    mensagens.slice(idsAntigos.length).forEach(inserirMensagem);
 
-  if (elDigitando) elMensagens.appendChild(elDigitando);
+    // Mensagens que saíram da lista (não existe exclusão individual hoje,
+    // mas mantém o diff correto se um dia existir, ou se a paginação mudar
+    // a janela carregada).
+    const idsNovos = new Set(mensagens.map((m) => m.id));
+    idsAntigos.forEach((id) => {
+      if (idsNovos.has(id)) return;
+      rendorizadas.get(id)?.elemento.remove();
+      rendorizadas.delete(id);
+    });
+
+    if (elDigitando) elMensagens.appendChild(elDigitando);
+  }
 
   const ultima = mensagens[mensagens.length - 1];
   const chegouCoisaNova = ultima && ultima.timestampMs > ultimoTsRenderizado;
@@ -604,7 +776,10 @@ async function enviar(conteudo = null, tipo = "texto") {
 async function subirArquivo(pasta, arquivo, extensao) {
   const caminho = `${pasta}/${sessaoAtual.user.uid}/${chatId}_${Date.now()}.${extensao}`;
   const destino = ref(storage, caminho);
-  await uploadBytes(destino, arquivo);
+  // Cada envio gera um nome de arquivo novo (Date.now()) — o conteúdo nunca
+  // é sobrescrito, então o CDN pode cachear "pra sempre" sem risco de servir
+  // uma versão velha.
+  await uploadBytes(destino, arquivo, { cacheControl: "public, max-age=31536000, immutable" });
   return getDownloadURL(destino);
 }
 
@@ -796,7 +971,10 @@ async function iniciar() {
     return; // erro já tratado e avisado dentro da função específica
   }
 
-  pararDeEscutar = escutarMensagens(chatId, atualizarDOM);
+  pararDeEscutar = escutarMensagens(chatId, (lista) => {
+    mensagensAoVivo = lista;
+    redesenharComHistorico();
+  });
 }
 
 // --------------------------------------------------------------------------
@@ -810,6 +988,12 @@ elTexto?.addEventListener("keypress", (e) => {
     e.preventDefault();
     enviar();
   }
+});
+
+// Carrega mais histórico automaticamente perto do topo, além do botão
+// manual — o botão continua existindo pra quem preferir tocar nele.
+elMensagens?.addEventListener("scroll", () => {
+  if (elMensagens.scrollTop < 80) carregarMaisAntigas();
 });
 
 document.getElementById("btnEnviar")?.addEventListener("click", () => enviar());

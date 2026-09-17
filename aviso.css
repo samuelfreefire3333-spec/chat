@@ -1,0 +1,77 @@
+.aviso-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100vw;
+            height: 100dvh;
+            background: var(--bg-main);
+            padding: 20px;
+        }
+
+        .aviso-box {
+            width: 100%;
+            max-width: 420px;
+            background: var(--bg-panel-2);
+            padding: 45px 30px;
+            border-radius: 24px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-soft);
+            text-align: center;
+            animation: popIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        @keyframes popIn {
+            from { opacity: 0; transform: scale(0.95) translateY(15px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .aviso-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            animation: pulse-icon 2s infinite ease-in-out;
+            display: inline-block;
+        }
+
+        @keyframes pulse-icon {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        
+        .aviso-titulo {
+            color: var(--text-main);
+            font-size: 24px;
+            font-weight: 800;
+            margin-bottom: 12px;
+            letter-spacing: -0.5px;
+        }
+
+        .aviso-mensagem {
+            color: var(--text-sec);
+            font-size: 15px;
+            line-height: 1.6;
+            margin-bottom: 35px;
+        }
+
+        .btn-action {
+            width: 100%;
+            background: var(--primary-accent);
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 14px;
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+            box-shadow: var(--primary-glow);
+        }
+        
+        .btn-action:hover {
+            background: var(--primary-accent-2);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(230, 0, 43, 0.35);
+        }
+        
+        .btn-action:active {
+            transform: scale(0.97);
+        }

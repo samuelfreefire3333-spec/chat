@@ -1,6 +1,6 @@
 import { db } from "./firebase.js";
 import {
-  doc, getDoc, setDoc, deleteDoc, collection, query, where, onSnapshot,
+  doc, getDoc, setDoc, deleteDoc, collection, query, where,
   getDocs, getCountFromServer, serverTimestamp, limit, documentId
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import Core, {
@@ -10,15 +10,6 @@ import Core, {
 // ==========================================================================
 // MODELO DE SEGUIDORES
 // ==========================================================================
-// Antes havia DOIS sistemas convivendo: um array `seguidores`/`seguindo`
-// dentro do documento do usuário e uma coleção `seguidores` legada. Toda
-// abertura de perfil reconciliava os dois, gastando quatro consultas extras.
-//
-// Ficou só a coleção de arestas, por dois motivos:
-//  1. Segurança — o array vivia no documento de OUTRA pessoa, então seguir
-//     alguém exigia permissão de escrita no perfil alheio. Com uma aresta por
-//     documento, cada escrita é autorizada pelo próprio uid de quem segue.
-//  2. Escala — um array dentro do documento cresce sem limite até estourar.
 
 const idAresta = (seguidor, seguindo) => `${seguidor}_${seguindo}`;
 
@@ -43,21 +34,16 @@ async function estaSeguindo(seguidor, seguindo) {
 }
 
 // ==========================================================================
-// PÁGINA
+// PÁGINA (ESTADO E LAYOUT)
 // ==========================================================================
 
 const params = new URLSearchParams(window.location.search);
-
 let sessaoAtual = null;
 let usuarioAlvo = null;
 let ehMeuPerfil = false;
-let pararDeEscutar = null;
 
 const el = (id) => document.getElementById(id);
 
-// Os IDs abaixo são os que existem em perfil.html. A versão anterior tentava
-// cada elemento em duas grafias (`el("myBio") || el("bioPerfil")`), resquício
-// de uma marcação antiga que não está mais no projeto.
 function elementos() {
   return {
     username: el("headerUsername"),
@@ -79,12 +65,14 @@ function ajustarLayout(e) {
   if (ehMeuPerfil) {
     if (e.botoesMeu) e.botoesMeu.style.display = "flex";
     if (e.botoesOutro) e.botoesOutro.style.display = "none";
-    return;
+    if (e.btnVoltar) e.btnVoltar.style.display = "none"; // Oculta seta de voltar se for o próprio perfil abrindo pela Nav
+    if (e.btnMenu) e.btnMenu.style.display = "block";
+  } else {
+    if (e.botoesMeu) e.botoesMeu.style.display = "none";
+    if (e.botoesOutro) e.botoesOutro.style.display = "flex";
+    if (e.btnVoltar) e.btnVoltar.style.display = "block";
+    if (e.btnMenu) e.btnMenu.style.display = "none";
   }
-  if (e.botoesMeu) e.botoesMeu.style.display = "none";
-  if (e.botoesOutro) e.botoesOutro.style.display = "flex";
-  if (e.btnVoltar) e.btnVoltar.style.display = "block";
-  if (e.btnMenu) e.btnMenu.style.display = "none";
 }
 
 async function atualizarContadores(e) {
@@ -99,23 +87,25 @@ async function atualizarContadores(e) {
 function pintarBotaoSeguir(btn, seguindo) {
   btn.textContent = seguindo ? "Seguindo" : "Seguir";
   btn.dataset.seguindo = seguindo ? "sim" : "nao";
-  btn.classList.toggle("btn-seguindo", seguindo);
+  // Modifica aspecto visual (Você pode adicionar classes específicas no CSS para 'btn-seguindo')
+  btn.style.background = seguindo ? "var(--bg-panel-2)" : "var(--primary-accent)";
+  btn.style.color = seguindo ? "var(--text-main)" : "white";
+  btn.style.border = seguindo ? "1px solid var(--border-color)" : "none";
 }
 
 async function configurarBotaoSeguir(e) {
   if (!e.btnSeguir || ehMeuPerfil) return;
-
+  
   pintarBotaoSeguir(e.btnSeguir, await estaSeguindo(sessaoAtual.username, usuarioAlvo));
 
   e.btnSeguir.addEventListener("click", async () => {
     const seguindoAgora = e.btnSeguir.dataset.seguindo === "sim";
     e.btnSeguir.disabled = true;
-
-    // Pinta antes de confirmar: se der erro, volta atrás.
+    
+    // UI Otimista: Pinta antes de confirmar a rede
     pintarBotaoSeguir(e.btnSeguir, !seguindoAgora);
-
+    
     const ref = doc(db, "seguidores", idAresta(sessaoAtual.username, usuarioAlvo));
-
     try {
       if (seguindoAgora) {
         await deleteDoc(ref);
@@ -130,6 +120,7 @@ async function configurarBotaoSeguir(e) {
       await atualizarContadores(e);
     } catch (err) {
       console.error("Erro ao atualizar seguidores:", err);
+      // Reverte em caso de falha
       pintarBotaoSeguir(e.btnSeguir, seguindoAgora);
       Core.aviso("Não foi possível concluir a ação.", "#ed4956");
     } finally {
@@ -139,28 +130,54 @@ async function configurarBotaoSeguir(e) {
 }
 
 // ==========================================================================
-// MODAL DE SEGUIDORES / SEGUINDO
+// MODAL DE SEGUIDORES / SEGUINDO (ARQUITETURA INSTAGRAM TABS)
 // ==========================================================================
-// Estava embutido no perfil.html; veio para cá para a página ficar sem
-// script inline.
 
 let sessaoModal = 0;
+let tabAtual = "seguidores"; 
 
-async function abrirListaDeUsuarios(titulo, tipo) {
-  const modal = el("modalListaUsuarios");
-  const tituloEl = el("modalListaTitulo");
-  const conteudo = el("modalListaConteudo");
-  if (!modal || !conteudo) return;
+const modalLista = el("modalListaUsuarios");
+const conteudoLista = el("modalListaConteudo");
+const tituloModal = el("modalListaTitulo");
+const tabSeguidores = el("tabSeguidores");
+const tabSeguindo = el("tabSeguindo");
+
+function mensagemDoModal(texto, erro = false) {
+  const span = document.createElement("span");
+  span.className = erro ? "modal-msg modal-msg-erro" : "modal-msg";
+  span.style.textAlign = "center";
+  span.style.marginTop = "30px";
+  span.style.color = erro ? "var(--primary-accent)" : "var(--text-sec)";
+  span.style.fontSize = "14px";
+  span.textContent = texto;
+  return span;
+}
+
+function alternarTab(tipo) {
+  tabAtual = tipo;
+  
+  // Atualiza UI das Guias (Tabs) simulando transição nativa
+  const ativo = "var(--text-main)";
+  const inativo = "var(--text-sec)";
+  
+  tabSeguidores.style.color = tipo === "seguidores" ? ativo : inativo;
+  tabSeguidores.style.borderBottomColor = tipo === "seguidores" ? "var(--primary-accent)" : "transparent";
+  
+  tabSeguindo.style.color = tipo === "seguindo" ? ativo : inativo;
+  tabSeguindo.style.borderBottomColor = tipo === "seguindo" ? "var(--primary-accent)" : "transparent";
+
+  carregarListaDeUsuarios(tipo);
+}
+
+async function carregarListaDeUsuarios(tipo) {
+  if (!modalLista || !conteudoLista) return;
 
   const estaSessao = Date.now();
-  sessaoModal = estaSessao;
+  sessaoModal = estaSessao; // Trava contra Race Conditions
+  
+  conteudoLista.replaceChildren(mensagemDoModal("Carregando..."));
 
-  tituloEl.textContent = titulo;
-  conteudo.replaceChildren(mensagemDoModal("Carregando..."));
-  modal.style.display = "flex";
-  requestAnimationFrame(() => { modal.style.opacity = "1"; });
-
-  // tipo "seguidores": quem segue o alvo. tipo "seguindo": quem o alvo segue.
+  // Lógica relacional: "seguidores" (quem segue o alvo), "seguindo" (quem o alvo segue).
   const campoConsulta = tipo === "seguidores" ? "seguindo" : "seguidor";
   const campoNome = tipo === "seguidores" ? "seguidor" : "seguindo";
 
@@ -171,197 +188,142 @@ async function abrirListaDeUsuarios(titulo, tipo) {
     );
     usernames = snap.docs.map((d) => d.data()[campoNome]).filter(Boolean);
   } catch (err) {
-    console.error("Erro ao carregar a lista:", err);
+    console.error("Erro ao consultar grafo de relações:", err);
     if (sessaoModal === estaSessao) {
-      conteudo.replaceChildren(mensagemDoModal("Erro ao carregar a lista.", true));
+      conteudoLista.replaceChildren(mensagemDoModal("Erro de conexão.", true));
     }
     return;
   }
 
-  if (sessaoModal !== estaSessao) return;
+  if (sessaoModal !== estaSessao) return; // Aborta se a aba foi trocada durante a requisição
 
   if (!usernames.length) {
-    conteudo.replaceChildren(mensagemDoModal("Ninguém por aqui ainda."));
+    conteudoLista.replaceChildren(mensagemDoModal("Nenhum usuário encontrado."));
     return;
   }
 
-  conteudo.replaceChildren();
+  conteudoLista.replaceChildren();
 
-  // Desenha em lotes de 20 para não travar aparelhos mais simples.
+  // Virtualização rudimentar (Paginação visual por lotes)
   for (let i = 0; i < usernames.length; i += 20) {
     if (sessaoModal !== estaSessao) return;
-
     const lote = usernames.slice(i, i + 20);
     let perfis = [];
+
     try {
       const snap = await getDocs(
         query(collection(db, "usuarios"), where(documentId(), "in", lote))
       );
       perfis = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     } catch (err) {
-      console.warn("Erro no lote:", err);
       perfis = lote.map((u) => ({ id: u, usuario: u, nome: u }));
     }
 
     if (sessaoModal !== estaSessao) return;
 
     const fragmento = document.createDocumentFragment();
-    perfis.forEach((p) => fragmento.appendChild(linhaDeUsuario(p)));
-    conteudo.appendChild(fragmento);
-
-    await new Promise((r) => setTimeout(r, 30));
+    perfis.forEach((p) => {
+      const username = p.usuario || p.id;
+      
+      const link = document.createElement("a");
+      link.className = "lista-usuario-item";
+      link.href = `perfil.html?u=${encodeURIComponent(username)}`;
+      link.style.cssText = "display: flex; align-items: center; gap: 12px; padding: 10px; text-decoration: none; color: var(--text-main); border-radius: 12px; transition: background 0.2s;";
+      
+      const img = document.createElement("img");
+      img.alt = "";
+      definirAvatar(img, p.foto);
+      img.style.cssText = "width: 44px; height: 44px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border-color); flex-shrink: 0;";
+      
+      const info = document.createElement("div");
+      info.style.cssText = "display: flex; flex-direction: column; overflow: hidden;";
+      
+      const forte = document.createElement("strong");
+      forte.textContent = username;
+      forte.style.cssText = "font-size: 14px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden;";
+      
+      const span = document.createElement("span");
+      span.textContent = p.nome || "";
+      span.style.cssText = "font-size: 12px; color: var(--text-sec); white-space: nowrap; text-overflow: ellipsis; overflow: hidden;";
+      
+      info.append(forte, span);
+      link.append(img, info);
+      fragmento.appendChild(link);
+    });
+    
+    conteudoLista.appendChild(fragmento);
+    await new Promise((r) => setTimeout(r, 20)); // Cede a main thread para não dropar FPS
   }
 }
 
-function mensagemDoModal(texto, erro = false) {
-  const span = document.createElement("span");
-  span.className = erro ? "modal-msg modal-msg-erro" : "modal-msg";
-  span.textContent = texto;
-  return span;
+function abrirModal(tipo) {
+  if (!usuarioAlvo) return;
+  tituloModal.textContent = usuarioAlvo; // Nome no topo do modal
+  modalLista.style.display = "flex";
+  requestAnimationFrame(() => { modalLista.style.opacity = "1"; });
+  alternarTab(tipo);
 }
 
-function linhaDeUsuario(perfil) {
-  const username = perfil.usuario || perfil.id;
-
-  const link = document.createElement("a");
-  link.className = "lista-usuario-item";
-  link.href = `perfil.html?u=${encodeURIComponent(username)}`;
-
-  const img = document.createElement("img");
-  img.alt = "";
-  definirAvatar(img, perfil.foto);
-
-  const info = document.createElement("div");
-  info.className = "lista-usuario-info";
-
-  const forte = document.createElement("strong");
-  forte.textContent = username;
-
-  const span = document.createElement("span");
-  span.textContent = perfil.nome || "";
-
-  info.append(forte, span);
-  link.append(img, info);
-  return link;
-}
-
-function fecharModalLista() {
-  sessaoModal = 0;
-  const modal = el("modalListaUsuarios");
-  if (!modal) return;
-  modal.style.opacity = "0";
-  setTimeout(() => { modal.style.display = "none"; }, 200);
+function fecharModal() {
+  modalLista.style.opacity = "0";
+  setTimeout(() => { modalLista.style.display = "none"; }, 200);
+  sessaoModal = 0; // Desativa renderizações pendentes
 }
 
 // ==========================================================================
-// MENU DE OPÇÕES
-// ==========================================================================
-
-function abrirMenuOpcoes() {
-  const overlay = el("overlayHamburguer");
-  const menu = el("menuHamburguer");
-  if (overlay) overlay.style.display = "block";
-  requestAnimationFrame(() => {
-    if (overlay) overlay.style.opacity = "1";
-    if (menu) menu.style.bottom = "0";
-  });
-}
-
-function fecharMenuOpcoes() {
-  const overlay = el("overlayHamburguer");
-  const menu = el("menuHamburguer");
-  if (overlay) overlay.style.opacity = "0";
-  if (menu) menu.style.bottom = "-100%";
-  setTimeout(() => { if (overlay) overlay.style.display = "none"; }, 300);
-}
-
-async function copiarLinkPerfil() {
-  const link = `${window.location.origin}/perfil.html?u=${encodeURIComponent(usuarioAlvo)}`;
-  try {
-    await navigator.clipboard.writeText(link);
-    Core.aviso("Link copiado!", "#00a884");
-  } catch (_) {
-    Core.aviso("Não foi possível copiar o link.", "#ed4956");
-  }
-}
-
-// ==========================================================================
-// INICIALIZAÇÃO
+// INICIALIZAÇÃO CRÍTICA (BOOTSTRAP DE EVENTOS)
 // ==========================================================================
 
 async function iniciar() {
   sessaoAtual = await sessao();
   montarAvatarNav();
 
-  const daURL = params.get("u");
-  usuarioAlvo = (daURL || sessaoAtual.username).toLowerCase().trim();
+  // Verifica URL param para definir se é o perfil alheio ou o próprio
+  usuarioAlvo = params.get("u") ? String(params.get("u")).toLowerCase().trim() : sessaoAtual.username;
   ehMeuPerfil = usuarioAlvo === sessaoAtual.username;
+  
+  const ui = elementos();
+  ajustarLayout(ui);
 
-  const e = elementos();
-  ajustarLayout(e);
-  if (e.username) e.username.textContent = usuarioAlvo;
+  try {
+    const perfil = await buscarPerfilPorUsername(usuarioAlvo);
+    if (!perfil) {
+      Core.aviso("Usuário não encontrado.", "#ed4956");
+      if (ui.nome) ui.nome.textContent = "Usuário não encontrado";
+      return;
+    }
 
-  const perfil = await buscarPerfilPorUsername(usuarioAlvo);
-  if (!perfil) {
-    Core.aviso(`O perfil de @${usuarioAlvo} não foi encontrado.`, "#ed4956");
-    setTimeout(() => window.location.replace("inbox.html"), 1800);
-    return;
-  }
+    if (ui.username) ui.username.textContent = usuarioAlvo;
+    if (ui.nome) ui.nome.textContent = perfil.nome || usuarioAlvo;
+    if (ui.bio) ui.bio.textContent = perfil.bio || "";
+    if (ui.foto) definirAvatar(ui.foto, perfil.foto);
 
-  // Mantém o perfil em tempo real (nome, bio e foto).
-  pararDeEscutar = onSnapshot(doc(db, "usuarios", perfil.id), (snap) => {
-    if (!snap.exists()) return;
-    const dados = snap.data();
-    if (e.username) e.username.textContent = dados.usuario || usuarioAlvo;
-    if (e.nome) e.nome.textContent = dados.nome || usuarioAlvo;
-    if (e.bio) e.bio.textContent = dados.bio || "Sem bio definida.";
-    if (dados.foto) definirAvatar(e.foto, dados.foto);
-  });
+    atualizarContadores(ui);
+    configurarBotaoSeguir(ui);
 
-  await atualizarContadores(e);
-  await configurarBotaoSeguir(e);
+    if (ui.btnMensagem) {
+      ui.btnMensagem.addEventListener("click", () => {
+        window.location.href = `chat.html?u=${encodeURIComponent(usuarioAlvo)}`;
+      });
+    }
 
-  if (e.btnMensagem) {
-    e.btnMensagem.addEventListener("click", () => {
-      window.location.href = `chat.html?u=${encodeURIComponent(usuarioAlvo)}`;
+    // Acoplamento de Eventos da Interface de Abas
+    el("btnAbrirSeguidores")?.addEventListener("click", () => abrirModal("seguidores"));
+    el("btnAbrirSeguindo")?.addEventListener("click", () => abrirModal("seguindo"));
+    el("btnFecharModalLista")?.addEventListener("click", fecharModal);
+    
+    tabSeguidores?.addEventListener("click", () => alternarTab("seguidores"));
+    tabSeguindo?.addEventListener("click", () => alternarTab("seguindo"));
+
+    ui.btnVoltar?.addEventListener("click", () => {
+      if (document.referrer && !document.referrer.includes("editar-perfil.html")) window.history.back();
+      else window.location.href = "inbox.html";
     });
+
+  } catch (err) {
+    console.error("Falha ao montar o perfil:", err);
+    Core.aviso("Erro ao carregar os dados.", "#ed4956");
   }
-
-  // Ligação dos controles da página (nenhum onclick no HTML).
-  el("btnAbrirSeguidores")?.addEventListener("click", () => abrirListaDeUsuarios("Seguidores", "seguidores"));
-  el("btnAbrirSeguindo")?.addEventListener("click", () => abrirListaDeUsuarios("Seguindo", "seguindo"));
-  el("btnFecharModalLista")?.addEventListener("click", fecharModalLista);
-  el("modalListaUsuarios")?.addEventListener("click", (ev) => {
-    if (ev.target === el("modalListaUsuarios")) fecharModalLista();
-  });
-
-  el("btnAbrirMenu")?.addEventListener("click", abrirMenuOpcoes);
-  el("overlayHamburguer")?.addEventListener("click", fecharMenuOpcoes);
-  el("btnCopiarLink")?.addEventListener("click", () => { copiarLinkPerfil(); fecharMenuOpcoes(); });
-  el("btnBloquear")?.addEventListener("click", () => {
-    Core.aviso("Bloqueio ainda não implementado.", "#e0a800");
-    fecharMenuOpcoes();
-  });
-  el("btnDenunciar")?.addEventListener("click", () => {
-    Core.aviso("Denúncia ainda não implementada.", "#e0a800");
-    fecharMenuOpcoes();
-  });
-
-  el("btnCompartilharPerfil")?.addEventListener("click", copiarLinkPerfil);
-  el("btnPosts")?.addEventListener("click", () => Core.aviso("Posts em breve!"));
-
-  el("btnVoltar")?.addEventListener("click", () => {
-    if (document.referrer && !document.referrer.includes("perfil.html")) window.history.back();
-    else window.location.href = "inbox.html";
-  });
-
-  document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") { fecharModalLista(); fecharMenuOpcoes(); }
-  });
 }
-
-window.addEventListener("pagehide", () => {
-  if (pararDeEscutar) pararDeEscutar();
-});
 
 iniciar();
