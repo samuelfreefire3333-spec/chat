@@ -15,11 +15,6 @@ const btn = document.getElementById("btnCadastrar");
 
 /**
  * Normaliza o nome de usuário.
- *
- * A versão anterior usava /[^a.z0-9._-]/g — faltou o hífen do intervalo, então
- * "a.z" valia como os três caracteres literais 'a', '.' e 'z' em vez da faixa
- * de 'a' a 'z'. Na prática "oscar" virava "a" e "joao" virava "a": quase todo
- * mundo era barrado por "nome curto demais" ou colidia no mesmo usuário.
  */
 export function normalizarUsuario(entrada) {
   return String(entrada || "")
@@ -67,21 +62,27 @@ async function fazerCadastro() {
     return;
   }
 
-  btn.textContent = "Verificando...";
+  btn.textContent = "Criando...";
   btn.disabled = true;
 
   let credencial = null;
 
   try {
+    // A regra do Firestore exige login pra ler qualquer documento
+    // (request.auth != null). Por isso a conta no Firebase Auth precisa
+    // ser criada ANTES de checar se o nome de usuário já existe — antes
+    // essa checagem rodava sem ninguém logado, a leitura era sempre
+    // negada, e o cadastro travava pra qualquer pessoa nova.
+    credencial = await createUserWithEmailAndPassword(auth, email, senha);
+
     const ref = doc(db, "usuarios", usuario);
     if ((await getDoc(ref)).exists()) {
+      // Nome já em uso: desfaz a conta que acabou de ser criada.
+      await deleteUser(credencial.user);
       Core.aviso("Este nome de usuário já está em uso.");
       restaurarBotao();
       return;
     }
-
-    btn.textContent = "Criando...";
-    credencial = await createUserWithEmailAndPassword(auth, email, senha);
 
     // O uid é o que liga o perfil ao token. Sem ele, as regras do Firestore e
     // o backend Go não têm como autorizar nada em nome desta conta.
@@ -131,3 +132,4 @@ elUsuario.addEventListener("blur", () => {
     }
   });
 });
+
