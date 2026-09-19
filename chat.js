@@ -38,12 +38,22 @@ let timerStatus = null;
 let ultimoTsRenderizado = 0;
 
 // Estado do que já está desenhado na tela, pro diff de atualizarDOM(): id da
-// mensagem -> { elemento, assinatura }. "elemento" é o nó de mais alto nível
-// já inserido em #mensagens (a .msg-coluna, ou o .msg-wrapper-other que a
-// envolve num chat direto) e "assinatura" resume o conteúdo renderizado, pra
-// saber se aquela mensagem específica precisa ser redesenhada.
+// mensagem -> { elemento, assinatura, agrupada }. "elemento" é o nó de mais
+// alto nível já inserido em #mensagens (a .msg-coluna, ou o .msg-wrapper-other
+// que a envolve num chat direto), "assinatura" resume o conteúdo renderizado
+// (pra saber se precisa redesenhar) e "agrupada" guarda se a mensagem ficou
+// colada na de cima (mesma pessoa, pouco tempo depois) — precisa ser
+// lembrado porque, quando só o conteúdo muda (uma reação nova, por exemplo),
+// a mensagem é redesenhada sem recalcular o agrupamento a partir do zero.
 const rendorizadas = new Map();
 let ultimoDiaRenderizado = null;
+
+// Agrupamento visual: mensagens da mesma pessoa dentro dessa janela de tempo
+// ficam coladas (sem repetir nome, com menos espaço acima) — é a mesma ideia
+// do Telegram/WhatsApp.
+const JANELA_AGRUPAMENTO = 5 * 60 * 1000; // 5 minutos
+let ultimoRemetenteAgrupamento = null;
+let ultimoTimestampAgrupamento = 0;
 
 // Paginação do histórico: escutarMensagens() mantém a "janela ao vivo" (as
 // LIMITE_HISTORICO mais recentes, em tempo real); carregarMaisAntigas() vai
@@ -81,13 +91,13 @@ function iniciarResposta(msg) {
   respondendoA = { id: msg.id, autor: msg.remetente, texto: msg.texto, tipo: msg.tipo };
   if (elRespostaAutor) elRespostaAutor.textContent = nomeDeExibicao(msg.remetente);
   if (elRespostaTexto) elRespostaTexto.textContent = resumo(msg.tipo, msg.texto);
-  if (elRespostaPreview) elRespostaPreview.style.display = "flex";
+  if (elRespostaPreview) elRespostaPreview.classList.add("aberta");
   elTexto?.focus();
 }
 
 function cancelarResposta() {
   respondendoA = null;
-  if (elRespostaPreview) elRespostaPreview.style.display = "none";
+  if (elRespostaPreview) elRespostaPreview.classList.remove("aberta");
 }
 
 btnCancelarResposta?.addEventListener("click", cancelarResposta);
@@ -97,15 +107,22 @@ btnCancelarResposta?.addEventListener("click", cancelarResposta);
 // ==========================================================================
 
 let menuMensagemAtual = null;
+let overlayMenuMensagem = null;
+let bolhaEmDestaque = null;
 
 function fecharMenuDeMensagem() {
   menuMensagemAtual?.remove();
   menuMensagemAtual = null;
+  overlayMenuMensagem?.remove();
+  overlayMenuMensagem = null;
+  bolhaEmDestaque?.classList.remove("msg-em-destaque");
+  bolhaEmDestaque = null;
 }
 
 async function alternarReacao(msg, emoji) {
   const emojiAtual = msg.reacoes?.[sessaoAtual.user.uid] || null;
   try {
+    navigator.vibrate?.(15);
     await reagirMensagem(chatId, msg.id, sessaoAtual.user.uid, emojiAtual, emoji);
   } catch (err) {
     console.error("Erro ao reagir:", err);
@@ -113,9 +130,21 @@ async function alternarReacao(msg, emoji) {
   }
 }
 
-function abrirMenuDeMensagem(ponto, msg) {
+function abrirMenuDeMensagem(ponto, msg, elementoBolha) {
   if (msg.tipo === "sistema") return;
   fecharMenuDeMensagem();
+
+  // Fundo escurecido/borrado atrás do menu — e a bolha escolhida flutua por
+  // cima dele (ver .msg-em-destaque no chat.css).
+  const overlay = document.createElement("div");
+  overlay.className = "menu-mensagem-overlay";
+  document.body.appendChild(overlay);
+  overlayMenuMensagem = overlay;
+
+  if (elementoBolha) {
+    elementoBolha.classList.add("msg-em-destaque");
+    bolhaEmDestaque = elementoBolha;
+  }
 
   const menu = document.createElement("div");
   menu.className = "menu-mensagem";
@@ -158,31 +187,58 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharMenuDeMensagem(); });
 
-/** Toque longo (touch) para abrir o menu de ações — espelha o padrão já usado no inbox. */
+/**
+ * Toque longo (touch) para abrir o menu de ações — espelha o padrão já usado
+ * no inbox, com duas correções sobre a versão anterior:
+ *  - tolera um pequeno tremor do dedo (LIMIAR_MOVIMENTO) em vez de cancelar
+ *    no primeiro pointermove, o que fazia o menu quase nunca abrir num
+ *    celular de verdade;
+ *  - dá feedback tátil (a bolha "afunda" e depois vibra) assim que o toque
+ *    é reconhecido, em vez de nada acontecer até o menu aparecer do nada.
+ * A cópia de texto que aparecia no celular ao segurar a mensagem vinha da
+ * seleção nativa do navegador, agora bloqueada em .msg-bubble no chat.css
+ * (-webkit-touch-callout / user-select: none).
+ */
 function ligarPressaoLonga(elemento, callback) {
+  const LIMIAR_MOVIMENTO = 10; // px
+
   let timer = null;
-  let ponto = null;
+  let inicio = null;
+
+  const limpar = () => {
+    clearTimeout(timer);
+    timer = null;
+    elemento.classList.remove("pressionando");
+  };
 
   const iniciar = (e) => {
-    ponto = { x: e.clientX, y: e.clientY };
-    clearTimeout(timer);
-    timer = setTimeout(() => callback(ponto), 500);
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    inicio = { x: e.clientX, y: e.clientY };
+    elemento.classList.add("pressionando");
+    timer = setTimeout(() => {
+      elemento.classList.remove("pressionando");
+      navigator.vibrate?.(25);
+      callback(inicio);
+    }, 450);
   };
-  const cancelar = () => clearTimeout(timer);
+
+  const mover = (e) => {
+    if (!timer || !inicio) return;
+    const dx = e.clientX - inicio.x;
+    const dy = e.clientY - inicio.y;
+    if (Math.hypot(dx, dy) > LIMIAR_MOVIMENTO) limpar();
+  };
 
   elemento.addEventListener("pointerdown", iniciar);
-  elemento.addEventListener("pointerup", cancelar);
-  elemento.addEventListener("pointerleave", cancelar);
-  elemento.addEventListener("pointercancel", cancelar);
-  elemento.addEventListener("pointermove", cancelar);
+  elemento.addEventListener("pointermove", mover);
+  elemento.addEventListener("pointerup", limpar);
+  elemento.addEventListener("pointerleave", limpar);
+  elemento.addEventListener("pointercancel", limpar);
 }
 
 // ==========================================================================
 // RENDERIZAÇÃO
 // ==========================================================================
-// Estas funções estavam vazias no arquivo original — só havia o comentário
-// "Coloque aqui a sua lógica de desenhar os balões". Nada aparecia na tela.
-//
 // Tudo é montado com createElement/textContent. Nenhum conteúdo vindo do banco
 // passa por innerHTML, então texto de mensagem não vira HTML executável.
 
@@ -212,9 +268,10 @@ function montarCitacao(msg) {
   return citacao;
 }
 
-/** Nome do remetente (só em grupo) e citação da resposta (se houver), no topo da bolha. */
-function prepararCabecalhoDaBolha(bolha, msg, souEu) {
-  if (modoGrupo && !souEu) {
+/** Nome do remetente (só em grupo, e só na primeira de um cluster) e citação
+ *  da resposta (se houver), no topo da bolha. */
+function prepararCabecalhoDaBolha(bolha, msg, souEu, agrupada) {
+  if (modoGrupo && !souEu && !agrupada) {
     const nome = document.createElement("div");
     nome.className = "msg-remetente";
     nome.textContent = nomeDeExibicao(msg.remetente);
@@ -253,10 +310,10 @@ function montarChipsDeReacao(msg) {
   return linha;
 }
 
-function criarBolhaDeTexto(msg, souEu) {
+function criarBolhaDeTexto(msg, souEu, agrupada) {
   const bolha = document.createElement("div");
   bolha.className = souEu ? "msg-bubble msg-mine" : "msg-bubble msg-other";
-  prepararCabecalhoDaBolha(bolha, msg, souEu);
+  prepararCabecalhoDaBolha(bolha, msg, souEu, agrupada);
 
   const corpo = document.createElement("span");
   corpo.className = "msg-texto";
@@ -266,10 +323,10 @@ function criarBolhaDeTexto(msg, souEu) {
   return bolha;
 }
 
-function criarBolhaDeImagem(msg, souEu) {
+function criarBolhaDeImagem(msg, souEu, agrupada) {
   const bolha = document.createElement("div");
   bolha.className = souEu ? "msg-bubble msg-mine msg-midia" : "msg-bubble msg-other msg-midia";
-  prepararCabecalhoDaBolha(bolha, msg, souEu);
+  prepararCabecalhoDaBolha(bolha, msg, souEu, agrupada);
 
   const img = document.createElement("img");
   img.src = urlSegura(msg.texto, "");
@@ -282,10 +339,10 @@ function criarBolhaDeImagem(msg, souEu) {
   return bolha;
 }
 
-function criarBolhaDeAudio(msg, souEu) {
+function criarBolhaDeAudio(msg, souEu, agrupada) {
   const bolha = document.createElement("div");
   bolha.className = souEu ? "msg-bubble msg-mine" : "msg-bubble msg-other";
-  prepararCabecalhoDaBolha(bolha, msg, souEu);
+  prepararCabecalhoDaBolha(bolha, msg, souEu, agrupada);
 
   const player = document.createElement("div");
   player.className = "custom-audio-player";
@@ -354,13 +411,13 @@ function criarMensagemDeSistema(msg) {
   return linha;
 }
 
-function renderizarMensagem(msg, souEu) {
+function renderizarMensagem(msg, souEu, agrupada = false) {
   if (msg.tipo === "sistema") return criarMensagemDeSistema(msg);
 
   let bolha;
-  if (msg.tipo === "audio") bolha = criarBolhaDeAudio(msg, souEu);
-  else if (msg.tipo === "imagem") bolha = criarBolhaDeImagem(msg, souEu);
-  else bolha = criarBolhaDeTexto(msg, souEu);
+  if (msg.tipo === "audio") bolha = criarBolhaDeAudio(msg, souEu, agrupada);
+  else if (msg.tipo === "imagem") bolha = criarBolhaDeImagem(msg, souEu, agrupada);
+  else bolha = criarBolhaDeTexto(msg, souEu, agrupada);
 
   const hora = document.createElement("span");
   hora.className = "msg-time";
@@ -370,13 +427,14 @@ function renderizarMensagem(msg, souEu) {
   // Responder e reagir: toque longo (touch) ou clique direito (mouse).
   bolha.addEventListener("contextmenu", (e) => {
     e.preventDefault();
-    abrirMenuDeMensagem({ x: e.clientX, y: e.clientY }, msg);
+    abrirMenuDeMensagem({ x: e.clientX, y: e.clientY }, msg, bolha);
   });
-  ligarPressaoLonga(bolha, (ponto) => abrirMenuDeMensagem(ponto, msg));
+  ligarPressaoLonga(bolha, (ponto) => abrirMenuDeMensagem(ponto, msg, bolha));
 
   const coluna = document.createElement("div");
   coluna.id = `msg-${msg.id}`;
   coluna.className = souEu ? "msg-coluna msg-coluna-minha" : "msg-coluna msg-coluna-outro";
+  if (agrupada) coluna.classList.add("msg-agrupada");
   coluna.appendChild(bolha);
 
   const chips = montarChipsDeReacao(msg);
@@ -389,6 +447,7 @@ function renderizarMensagem(msg, souEu) {
   // por mensagem lotaria a tela.
   const wrapper = document.createElement("div");
   wrapper.className = "msg-wrapper-other";
+  if (agrupada) wrapper.classList.add("msg-agrupada");
 
   const avatar = document.createElement("img");
   avatar.alt = "";
@@ -442,12 +501,27 @@ function inserirMensagem(msg) {
   if (dia !== ultimoDiaRenderizado) {
     inserirAntesDoIndicador(separadorDeData(ms));
     ultimoDiaRenderizado = dia;
+    ultimoRemetenteAgrupamento = null; // novo dia nunca "cola" com o anterior
   }
 
+  const agrupada = msg.tipo !== "sistema" && !!(
+    ultimoRemetenteAgrupamento === msg.remetenteUid &&
+    ms - ultimoTimestampAgrupamento < JANELA_AGRUPAMENTO
+  );
+
   const souEu = msg.remetenteUid === sessaoAtual.user.uid;
-  const no = renderizarMensagem(msg, souEu);
+  const no = renderizarMensagem(msg, souEu, agrupada);
   inserirAntesDoIndicador(no);
-  rendorizadas.set(msg.id, { elemento: no, assinatura: assinaturaDe(msg) });
+  rendorizadas.set(msg.id, { elemento: no, assinatura: assinaturaDe(msg), agrupada });
+
+  // Uma mensagem de sistema (ex.: "chamada perdida") sempre quebra o
+  // agrupamento — a próxima mensagem real começa um cluster novo.
+  if (msg.tipo === "sistema") {
+    ultimoRemetenteAgrupamento = null;
+  } else {
+    ultimoRemetenteAgrupamento = msg.remetenteUid;
+    ultimoTimestampAgrupamento = ms;
+  }
 }
 
 /** Cria (uma vez) o botão "carregar mensagens anteriores" do topo. */
@@ -484,6 +558,8 @@ function reconstruirTudo(mensagens) {
   elMensagens.replaceChildren();
   rendorizadas.clear();
   ultimoDiaRenderizado = null;
+  ultimoRemetenteAgrupamento = null;
+  ultimoTimestampAgrupamento = 0;
 
   // Grupos ainda não têm histórico paginável hoje — carregarMensagensAntigas
   // já funciona pra grupo (é a mesma subcoleção), mas o botão só aparece pra
@@ -551,7 +627,9 @@ async function carregarMaisAntigas() {
  * um prefixo exato da nova — ou seja, nada sumiu nem mudou de posição, só
  * pode ter (a) conteúdo de mensagens existentes mudado (reação, confirmação
  * de "enviando..." -> enviada) e/ou (b) mensagens novas no fim. Nesse caso só
- * tocamos exatamente o que mudou.
+ * tocamos exatamente o que mudou — e reaproveitamos o "agrupada" já decidido
+ * pra cada mensagem existente, já que o agrupamento de quem já foi desenhado
+ * nunca muda (depende só de mensagens anteriores, que são fixas).
  *
  * Fora desse caso (primeira carga do chat, ou qualquer coisa que reordene ou
  * remova algo do meio) cai no reconstruirTudo() de sempre — mais caro, mas
@@ -573,14 +651,13 @@ function atualizarDOM(mensagens) {
       const assinatura = assinaturaDe(msg);
       if (registro.assinatura === assinatura) return;
 
-      const souEu = msg.remetenteUid === sessaoAtual.user.uid;
-      const novoNo = renderizarMensagem(msg, souEu);
+      const souEu = msg.remetenteUid === sessaoAtual.username;
+      const novoNo = renderizarMensagem(msg, souEu, registro.agrupada);
       registro.elemento.replaceWith(novoNo);
-      rendorizadas.set(msg.id, { elemento: novoNo, assinatura });
+      rendorizadas.set(msg.id, { elemento: novoNo, assinatura, agrupada: registro.agrupada });
     });
 
     mensagens.slice(idsAntigos.length).forEach(inserirMensagem);
-
     // Mensagens que saíram da lista (não existe exclusão individual hoje,
     // mas mantém o diff correto se um dia existir, ou se a paginação mudar
     // a janela carregada).
@@ -619,7 +696,7 @@ function marcarComoLido() {
 function mostrarOnline() {
   clearTimeout(timerStatus);
   elStatus.textContent = "Online";
-  elStatus.style.color = "#00a884";
+  elStatus.classList.add("status-online");
 }
 
 async function mostrarOffline(lastSeenDoServidor) {
@@ -636,12 +713,12 @@ async function mostrarOffline(lastSeenDoServidor) {
 
   const relativo = tempoRelativo(lastSeen);
   elStatus.textContent = relativo ? `Visto ${relativo}` : "Offline";
-  elStatus.style.color = "var(--text-sec)";
+  elStatus.classList.remove("status-online");
 }
 
 function pedirStatus() {
   elStatus.textContent = "…";
-  elStatus.style.color = "var(--text-sec)";
+  elStatus.classList.remove("status-online");
 
   Radar.verificarStatus(outroUsuario);
 
@@ -719,8 +796,8 @@ function atualizarBotoesDeEnvio() {
   const temTexto = elTexto.value.trim().length > 0;
   const acoes = document.getElementById("action-buttons");
   const btnEnviar = document.getElementById("btnEnviar");
-  if (acoes) acoes.style.display = temTexto ? "none" : "flex";
-  if (btnEnviar) btnEnviar.style.display = temTexto ? "flex" : "none";
+  acoes?.classList.toggle("oculto", temTexto);
+  btnEnviar?.classList.toggle("mostrar", temTexto);
 }
 
 async function enviar(conteudo = null, tipo = "texto") {
@@ -763,12 +840,11 @@ async function enviar(conteudo = null, tipo = "texto") {
         respondendoA = respostaEnviada;
         if (elRespostaAutor) elRespostaAutor.textContent = nomeDeExibicao(respostaEnviada.autor);
         if (elRespostaTexto) elRespostaTexto.textContent = resumo(respostaEnviada.tipo, respostaEnviada.texto);
-        if (elRespostaPreview) elRespostaPreview.style.display = "flex";
+        if (elRespostaPreview) elRespostaPreview.classList.add("aberta");
       }
     }
   }
 }
-
 // ==========================================================================
 // MÍDIA
 // ==========================================================================
@@ -948,7 +1024,7 @@ async function iniciarComoGrupo() {
 
   elNome.textContent = chat.nome || "Grupo";
   definirAvatar(elFoto, AVATAR_PADRAO);
-  elStatus.style.color = "var(--text-sec)";
+  elStatus.classList.remove("status-online");
   elStatus.textContent = `${participantesDoGrupo.length} participantes`;
 
   const outrosParticipantes = [...participantesValidos];
@@ -1021,3 +1097,5 @@ window.addEventListener("pagehide", () => {
 });
 
 iniciar();
+
+    
