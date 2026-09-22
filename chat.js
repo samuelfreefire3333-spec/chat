@@ -4,7 +4,8 @@ import Core, {
   sessao, urlSegura, definirAvatar, horaCurta, tempoRelativo,
   buscarPerfilPorUsername, idDoChat, AVATAR_PADRAO, montarAvatarNav
 } from "./core.js";
-import Radar from "./radar.js";
+import Radar, { zerarNotificacoes } from "./radar.js";
+import { abrirJanelaDeChamada } from "./chamada-flutuante.js";
 import {
   escutarMensagens, enviarMensagem, enviarMensagemNoGrupo, garantirChat,
   obterChat, reagirMensagem, resumo, carregarMensagensAntigas, TAMANHO_PAGINA_HISTORICO
@@ -35,7 +36,21 @@ let chatId = null;
 let fotoDoContato = AVATAR_PADRAO;
 let pararDeEscutar = null;
 let timerStatus = null;
-let ultimoTsRenderizado = 0;
+let idUltimaRenderizada = null;
+
+// Enquanto carregarMaisAntigas() está recolocando a tela na posição de antes,
+// atualizarDOM() não deve mexer no scroll — as duas brigando era o que fazia
+// a conversa saltar para o fim ao tocar em "carregar mensagens anteriores".
+let ancorandoScroll = false;
+
+// Mensagens que chegaram enquanto a pessoa lia o histórico mais acima.
+let novasNaoVistas = 0;
+let elPilulaNovas = null;
+
+// A animação de entrada da bolha só vale para mensagem que acabou de chegar.
+// Aplicada na carga inicial, ela animava as 200 mensagens do histórico de uma
+// vez — e voltava a animar toda vez que alguém reagia a uma mensagem antiga.
+let cargaInicialFeita = false;
 
 // Estado do que já está desenhado na tela, pro diff de atualizarDOM(): id da
 // mensagem -> { elemento, assinatura, agrupada }. "elemento" é o nó de mais
@@ -130,9 +145,15 @@ async function alternarReacao(msg, emoji) {
   }
 }
 
+// Momento em que o menu foi aberto. O "pointerup" que encerra o toque longo
+// gera um "click" logo em seguida, fora do menu — sem esta trava o menu
+// fechava no mesmo instante em que aparecia, em todo celular.
+let menuAbertoEm = 0;
+
 function abrirMenuDeMensagem(ponto, msg, elementoBolha) {
   if (msg.tipo === "sistema") return;
   fecharMenuDeMensagem();
+  menuAbertoEm = Date.now();
 
   // Fundo escurecido/borrado atrás do menu — e a bolha escolhida flutua por
   // cima dele (ver .msg-em-destaque no chat.css).
@@ -170,6 +191,27 @@ function abrirMenuDeMensagem(ponto, msg, elementoBolha) {
   btnResponder.addEventListener("click", () => { fecharMenuDeMensagem(); iniciarResposta(msg); });
 
   menu.append(linhaEmojis, btnResponder);
+
+  // Copiar: a bolha tem user-select desligado no celular (senão o menu nativo
+  // de "Copiar" abre por cima deste), então sem esta opção não havia nenhum
+  // jeito de copiar o texto de uma mensagem pelo telefone.
+  if (msg.tipo === "texto" || !msg.tipo) {
+    const btnCopiar = document.createElement("button");
+    btnCopiar.type = "button";
+    btnCopiar.className = "menu-item";
+    btnCopiar.setAttribute("role", "menuitem");
+    btnCopiar.textContent = "📋  Copiar";
+    btnCopiar.addEventListener("click", async () => {
+      fecharMenuDeMensagem();
+      try {
+        await navigator.clipboard.writeText(msg.texto || "");
+        Core.aviso("Mensagem copiada.", "#00a884");
+      } catch (_) {
+        Core.aviso("Não foi possível copiar.", "#ed4956");
+      }
+    });
+    menu.appendChild(btnCopiar);
+  }
   document.body.appendChild(menu);
 
   const largura = menu.offsetWidth || 240;
@@ -183,7 +225,10 @@ function abrirMenuDeMensagem(ponto, msg, elementoBolha) {
 }
 
 document.addEventListener("click", (e) => {
-  if (menuMensagemAtual && !menuMensagemAtual.contains(e.target)) fecharMenuDeMensagem();
+  if (!menuMensagemAtual || menuMensagemAtual.contains(e.target)) return;
+  // Ignora o clique que o próprio toque longo produz ao soltar o dedo.
+  if (Date.now() - menuAbertoEm < 350) return;
+  fecharMenuDeMensagem();
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") fecharMenuDeMensagem(); });
 
@@ -374,15 +419,31 @@ function criarBolhaDeAudio(msg, souEu, agrupada) {
     return `${m}:${String(seg).padStart(2, "0")}`;
   };
 
+  const mostrarPlay = () => {
+    btn.innerHTML = ICONE_PLAY;
+    btn.setAttribute("aria-label", "Reproduzir mensagem de voz");
+  };
+  const mostrarPause = () => {
+    btn.innerHTML = ICONE_PAUSE;
+    btn.setAttribute("aria-label", "Pausar mensagem de voz");
+  };
+
   audio.addEventListener("loadedmetadata", () => { duracao.textContent = formatar(audio.duration); });
   audio.addEventListener("timeupdate", () => {
     if (audio.duration) progresso.style.width = `${(audio.currentTime / audio.duration) * 100}%`;
     duracao.textContent = formatar(audio.duration - audio.currentTime);
   });
+
+  // O ícone acompanha o estado real do elemento, e não só o clique no botão:
+  // quando um áudio novo começava, o botão do anterior continuava mostrando
+  // "pause" para sempre, porque a pausa vinha de fora.
+  audio.addEventListener("play", mostrarPause);
+  audio.addEventListener("pause", mostrarPlay);
   audio.addEventListener("ended", () => {
-    btn.innerHTML = ICONE_PLAY;
-    btn.setAttribute("aria-label", "Reproduzir mensagem de voz");
+    mostrarPlay();
     progresso.style.width = "0%";
+    // Sem isto, a duração ficava travada em 0:00 depois da primeira escuta.
+    duracao.textContent = formatar(audio.duration);
   });
 
   btn.addEventListener("click", () => {
@@ -390,12 +451,8 @@ function criarBolhaDeAudio(msg, souEu, agrupada) {
       // Pausa qualquer outro áudio tocando na conversa.
       elMensagens.querySelectorAll("audio").forEach((a) => { if (a !== audio) a.pause(); });
       audio.play().catch(() => Core.aviso("Não foi possível reproduzir o áudio."));
-      btn.innerHTML = ICONE_PAUSE;
-      btn.setAttribute("aria-label", "Pausar mensagem de voz");
     } else {
       audio.pause();
-      btn.innerHTML = ICONE_PLAY;
-      btn.setAttribute("aria-label", "Reproduzir mensagem de voz");
     }
   });
 
@@ -411,13 +468,15 @@ function criarMensagemDeSistema(msg) {
   return linha;
 }
 
-function renderizarMensagem(msg, souEu, agrupada = false) {
+function renderizarMensagem(msg, souEu, agrupada = false, animar = false) {
   if (msg.tipo === "sistema") return criarMensagemDeSistema(msg);
 
   let bolha;
   if (msg.tipo === "audio") bolha = criarBolhaDeAudio(msg, souEu, agrupada);
   else if (msg.tipo === "imagem") bolha = criarBolhaDeImagem(msg, souEu, agrupada);
   else bolha = criarBolhaDeTexto(msg, souEu, agrupada);
+
+  if (animar) bolha.classList.add("msg-nova");
 
   const hora = document.createElement("span");
   hora.className = "msg-time";
@@ -510,7 +569,7 @@ function inserirMensagem(msg) {
   );
 
   const souEu = msg.remetenteUid === sessaoAtual.user.uid;
-  const no = renderizarMensagem(msg, souEu, agrupada);
+  const no = renderizarMensagem(msg, souEu, agrupada, cargaInicialFeita);
   inserirAntesDoIndicador(no);
   rendorizadas.set(msg.id, { elemento: no, assinatura: assinaturaDe(msg), agrupada });
 
@@ -522,6 +581,59 @@ function inserirMensagem(msg) {
     ultimoRemetenteAgrupamento = msg.remetenteUid;
     ultimoTimestampAgrupamento = ms;
   }
+}
+
+// ==========================================================================
+// ROLAGEM
+// ==========================================================================
+
+function estaNoFim() {
+  return elMensagens.scrollHeight - elMensagens.scrollTop - elMensagens.clientHeight < 120;
+}
+
+function irParaOFim(suave = false) {
+  if (suave && typeof elMensagens.scrollTo === "function") {
+    elMensagens.scrollTo({ top: elMensagens.scrollHeight, behavior: "smooth" });
+  } else {
+    elMensagens.scrollTop = elMensagens.scrollHeight;
+  }
+  esconderPilulaDeNovas();
+}
+
+/**
+ * Botão flutuante "novas mensagens". Antes, qualquer mensagem que chegasse
+ * arrastava a tela para o fim à força — mesmo com a pessoa lendo o histórico
+ * lá em cima, que é exatamente quando isso mais atrapalha.
+ */
+function pilulaDeNovas() {
+  if (elPilulaNovas) return elPilulaNovas;
+
+  const area = document.querySelector(".chat-input-area");
+  if (!area) return null;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.id = "btnNovasMensagens";
+  btn.className = "btn-novas-mensagens";
+  btn.addEventListener("click", () => irParaOFim(true));
+  area.appendChild(btn);
+
+  elPilulaNovas = btn;
+  return btn;
+}
+
+function mostrarPilulaDeNovas() {
+  const btn = pilulaDeNovas();
+  if (!btn) return;
+  btn.textContent = novasNaoVistas > 1
+    ? `${novasNaoVistas} novas mensagens ↓`
+    : "Nova mensagem ↓";
+  btn.classList.add("visivel");
+}
+
+function esconderPilulaDeNovas() {
+  novasNaoVistas = 0;
+  elPilulaNovas?.classList.remove("visivel");
 }
 
 /** Cria (uma vez) o botão "carregar mensagens anteriores" do topo. */
@@ -567,7 +679,12 @@ function reconstruirTudo(mensagens) {
   elMensagens.appendChild(elementoCarregarMais());
   atualizarBotaoCarregarMais();
 
+  // Reconstrução inteira (primeira carga, ou histórico antigo entrando no
+  // topo) nunca anima: seriam dezenas de bolhas pulando na tela de uma vez.
+  const animavaAntes = cargaInicialFeita;
+  cargaInicialFeita = false;
   mensagens.forEach(inserirMensagem);
+  cargaInicialFeita = animavaAntes;
 
   if (elDigitando) elMensagens.appendChild(elDigitando);
 }
@@ -603,12 +720,19 @@ async function carregarMaisAntigas() {
     if (!pagina.length) return;
 
     const alturaAntes = elMensagens.scrollHeight;
-    historicoAntigo = [...pagina, ...historicoAntigo];
-    redesenharComHistorico();
+    const topoAntes = elMensagens.scrollTop;
 
-    // Mantém o trecho que a pessoa estava olhando na mesma posição visual,
-    // em vez de puxar a tela pro topo (ou pro fundo) sozinha.
-    elMensagens.scrollTop += elMensagens.scrollHeight - alturaAntes;
+    historicoAntigo = [...pagina, ...historicoAntigo];
+
+    // A bandeira impede que atualizarDOM() mande a tela para o fim no meio
+    // desta operação — era o motivo de "carregar mensagens anteriores" jogar
+    // a conversa lá para baixo em vez de manter o ponto de leitura.
+    ancorandoScroll = true;
+    redesenharComHistorico();
+    ancorandoScroll = false;
+
+    // Mantém o trecho que a pessoa estava olhando na mesma posição visual.
+    elMensagens.scrollTop = topoAntes + (elMensagens.scrollHeight - alturaAntes);
   } catch (err) {
     console.error("Erro ao carregar mensagens antigas:", err);
     Core.aviso("Não foi possível carregar mensagens antigas.", "#ed4956");
@@ -636,8 +760,7 @@ async function carregarMaisAntigas() {
  * correto, e raro na prática.
  */
 function atualizarDOM(mensagens) {
-  const coladoNoFim =
-    elMensagens.scrollHeight - elMensagens.scrollTop - elMensagens.clientHeight < 120;
+  const estavaNoFim = estaNoFim();
 
   const idsAntigos = [...rendorizadas.keys()];
   const prefixoIgual =
@@ -651,8 +774,10 @@ function atualizarDOM(mensagens) {
       const assinatura = assinaturaDe(msg);
       if (registro.assinatura === assinatura) return;
 
-      const souEu = msg.remetenteUid === sessaoAtual.username;
-      const novoNo = renderizarMensagem(msg, souEu, registro.agrupada);
+      const souEu = msg.remetenteUid === sessaoAtual.user.uid;
+      // Redesenho de uma mensagem que já estava na tela (reação nova, envio
+      // confirmado): nunca anima de novo.
+      const novoNo = renderizarMensagem(msg, souEu, registro.agrupada, false);
       registro.elemento.replaceWith(novoNo);
       rendorizadas.set(msg.id, { elemento: novoNo, assinatura, agrupada: registro.agrupada });
     });
@@ -672,11 +797,22 @@ function atualizarDOM(mensagens) {
   }
 
   const ultima = mensagens[mensagens.length - 1];
-  const chegouCoisaNova = ultima && ultima.timestampMs > ultimoTsRenderizado;
-  if (ultima) ultimoTsRenderizado = ultima.timestampMs;
+  // Comparar por ID, e não por timestamp: mensagem ainda não confirmada pelo
+  // servidor tem timestamp estimado, e a comparação numérica dava falso
+  // negativo justamente na mensagem que a pessoa acabou de enviar.
+  const chegouCoisaNova = !!ultima && ultima.id !== idUltimaRenderizada;
+  const ultimaEhMinha = !!ultima && ultima.remetenteUid === sessaoAtual.user.uid;
+  if (ultima) idUltimaRenderizada = ultima.id;
 
-  if (coladoNoFim || chegouCoisaNova) {
-    elMensagens.scrollTop = elMensagens.scrollHeight;
+  cargaInicialFeita = true;
+
+  if (ancorandoScroll) {
+    // carregarMaisAntigas() está cuidando da posição.
+  } else if (estavaNoFim || (chegouCoisaNova && ultimaEhMinha)) {
+    irParaOFim();
+  } else if (chegouCoisaNova) {
+    novasNaoVistas++;
+    mostrarPilulaDeNovas();
   }
 
   marcarComoLido();
@@ -687,16 +823,35 @@ function marcarComoLido() {
   try {
     localStorage.setItem(`last_read_${chatId}`, String(Date.now()));
   } catch (_) {}
+
+  // O contador do ícone de mensagens só era zerado na caixa de entrada: quem
+  // entrava direto numa conversa pela notificação ficava com o número preso.
+  zerarNotificacoes();
 }
 
 // ==========================================================================
 // STATUS DO CONTATO (ONLINE / VISTO POR ÚLTIMO) — só em chat direto
 // ==========================================================================
 
+// O texto do cabeçalho tem duas fontes: a presença (Online / Visto há...) e o
+// "digitando…", que tem prioridade enquanto dura. Sem este controle, uma
+// resposta de presença chegando no meio apagava o "digitando…" — e vice-versa.
+let statusDePresenca = "";
+
+function aplicarStatusDoCabecalho() {
+  if (!elStatus) return;
+  if (digitandoAte && Date.now() < digitandoAte) {
+    elStatus.textContent = "digitando…";
+    return;
+  }
+  elStatus.textContent = statusDePresenca || "…";
+}
+
 function mostrarOnline() {
   clearTimeout(timerStatus);
-  elStatus.textContent = "Online";
+  statusDePresenca = "Online";
   elStatus.classList.add("status-online");
+  aplicarStatusDoCabecalho();
 }
 
 async function mostrarOffline(lastSeenDoServidor) {
@@ -712,13 +867,15 @@ async function mostrarOffline(lastSeenDoServidor) {
   }
 
   const relativo = tempoRelativo(lastSeen);
-  elStatus.textContent = relativo ? `Visto ${relativo}` : "Offline";
+  statusDePresenca = relativo ? `Visto ${relativo}` : "Offline";
   elStatus.classList.remove("status-online");
+  aplicarStatusDoCabecalho();
 }
 
 function pedirStatus() {
-  elStatus.textContent = "…";
+  statusDePresenca = "…";
   elStatus.classList.remove("status-online");
+  aplicarStatusDoCabecalho();
 
   Radar.verificarStatus(outroUsuario);
 
@@ -740,16 +897,25 @@ window.addEventListener("mensagem_servidor", (e) => {
   }
 
   if (msg.type === "chat") {
-    esconderDigitando();
+    // pararDeMostrarDigitando(), e não só esconderDigitando(): esconder a
+    // bolha deixava digitandoAte no futuro, então aplicarStatusDoCabecalho()
+    // continuava escrevendo "digitando…" por até 3 s depois de a mensagem
+    // chegar — e o mostrarOnline() logo abaixo não conseguia sobrescrever.
+    pararDeMostrarDigitando();
     // A mensagem em si chega pelo Firestore; aqui só reagimos ao sinal.
     if (!modoGrupo) mostrarOnline();
     return;
   }
 
-  if (msg.type === "digitando") {
-    mostrarDigitando();
-    clearTimeout(window.__timeoutDigitando);
-    window.__timeoutDigitando = setTimeout(esconderDigitando, 2500);
+  if (msg.type === "digitando" || msg.type === "parou_digitando") {
+    // O app não anuncia digitação em grupo (ver aoDigitar). Logo, um
+    // "digitando" que chega enquanto você olha um GRUPO veio de uma conversa
+    // privada com essa pessoa: acender a bolha do grupo seria inventar
+    // informação — e era mais um jeito de o indicador aparecer sozinho.
+    if (modoGrupo) return;
+
+    if (msg.type === "digitando") receberDigitando();
+    else pararDeMostrarDigitando();
   }
 });
 
@@ -757,25 +923,102 @@ window.addEventListener("mensagem_servidor", (e) => {
 // gratuito acordar. Não se aplica a grupos (sem presença individual).
 window.addEventListener("radar_conectado", () => { if (!modoGrupo) pedirStatus(); });
 
+// O indicador some por TEMPO DE RELÓGIO, e não por um setTimeout solto.
+//
+// Era esse o bug de "aparece que a outra pessoa está digitando a todo momento
+// mas ela não está": o navegador congela os timers de uma aba que vai para
+// segundo plano ou entra no cache de retorno. Bastava um aviso de digitação
+// chegar pouco antes de você minimizar o app para o setTimeout de 2,5 s nunca
+// disparar — e o "digitando..." ficava colado na tela por tempo indeterminado.
+//
+// (A outra metade do bug estava no radar.js: avisos de digitação ficavam
+// guardados na fila de reenvio e eram despejados minutos depois, quando o
+// servidor gratuito acordava.)
+const VALIDADE_DIGITANDO = 3000;
+let digitandoAte = 0;
+let vigiaDigitando = null;
+
+function receberDigitando() {
+  // Receber este aviso já prova que a pessoa está conectada agora.
+  if (!modoGrupo) mostrarOnline();
+
+  digitandoAte = Date.now() + VALIDADE_DIGITANDO;
+  mostrarDigitando();
+  if (!vigiaDigitando) vigiaDigitando = setInterval(conferirDigitando, 700);
+}
+
+function conferirDigitando() {
+  if (Date.now() < digitandoAte) return;
+  pararDeMostrarDigitando();
+}
+
+function pararDeMostrarDigitando() {
+  digitandoAte = 0;
+  clearInterval(vigiaDigitando);
+  vigiaDigitando = null;
+  esconderDigitando();
+  aplicarStatusDoCabecalho();
+}
+
 function mostrarDigitando() {
   if (!elDigitando) return;
+
+  // O balão de bolinhas sozinho não diz nada a quem vê pela primeira vez. O
+  // cabeçalho dizer "digitando…" deixa claro de quem é e o que está
+  // acontecendo — é o mesmo padrão do WhatsApp.
+  if (!modoGrupo) aplicarStatusDoCabecalho();
+
+  const acompanhando = estaNoFim();
   elDigitando.style.display = "flex";
   elMensagens.appendChild(elDigitando);
-  elMensagens.scrollTop = elMensagens.scrollHeight;
+  // Só acompanha se a pessoa já estava no fim — senão o indicador puxava a
+  // tela para baixo no meio da leitura do histórico.
+  if (acompanhando) elMensagens.scrollTop = elMensagens.scrollHeight;
 }
 
 function esconderDigitando() {
   if (elDigitando) elDigitando.style.display = "none";
 }
 
+// Voltar para o app confere na hora se aquele "digitando..." ainda vale, sem
+// depender de nenhum timer que possa ter sido congelado.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") conferirDigitando();
+});
+
+// Sem conexão não há como saber se a pessoa ainda está digitando. Manter o
+// indicador aceso seria inventar uma informação que não temos.
+window.addEventListener("radar_desconectado", pararDeMostrarDigitando);
+
 // ==========================================================================
 // ENVIO
 // ==========================================================================
 
 let ultimoAvisoDigitando = 0;
+let anunciandoDigitacao = false;
+
+/**
+ * O campo cresce junto com o texto (até um teto), como em qualquer mensageiro.
+ * Antes era um <input> de uma linha só: não dava para escrever um parágrafo,
+ * e quebra de linha era simplesmente impossível.
+ */
+const ALTURA_MINIMA_CAMPO = 40;
+const ALTURA_MAXIMA_CAMPO = 120;
+
+function ajustarAlturaDoCampo() {
+  if (!elTexto) return;
+  elTexto.style.height = "auto";
+  const altura = Math.min(
+    Math.max(elTexto.scrollHeight, ALTURA_MINIMA_CAMPO),
+    ALTURA_MAXIMA_CAMPO
+  );
+  elTexto.style.height = `${altura}px`;
+  elTexto.style.overflowY = elTexto.scrollHeight > ALTURA_MAXIMA_CAMPO ? "auto" : "hidden";
+}
 
 function aoDigitar() {
   atualizarBotoesDeEnvio();
+  ajustarAlturaDoCampo();
 
   // Em grupo, um evento "digitando" viraria N mensagens WebSocket (uma por
   // participante) a cada tecla — o limite de taxa da conexão é por conexão,
@@ -784,12 +1027,28 @@ function aoDigitar() {
   // enquanto do que arriscar a conexão cair.
   if (modoGrupo) return;
 
+  // Apagar tudo é o contrário de estar digitando. Antes não existia nenhum
+  // aviso de "parei": a outra ponta só descobria pelo tempo passando.
+  if (!elTexto.value.trim()) {
+    avisarQueParei();
+    return;
+  }
+
   // No máximo um aviso por segundo, em vez de um a cada tecla.
   const agora = Date.now();
   if (agora - ultimoAvisoDigitando > 1000) {
     ultimoAvisoDigitando = agora;
+    anunciandoDigitacao = true;
     Radar.emit({ type: "digitando", to: outroUsuario });
   }
+}
+
+/** Avisa a outra ponta que parei de digitar — só se eu tinha avisado antes. */
+function avisarQueParei() {
+  if (modoGrupo || !anunciandoDigitacao) return;
+  anunciandoDigitacao = false;
+  ultimoAvisoDigitando = 0;
+  Radar.emit({ type: "parou_digitando", to: outroUsuario });
 }
 
 function atualizarBotoesDeEnvio() {
@@ -810,7 +1069,9 @@ async function enviar(conteudo = null, tipo = "texto") {
   if (conteudo === null) {
     elTexto.value = "";
     atualizarBotoesDeEnvio();
+    ajustarAlturaDoCampo();
     cancelarResposta();
+    avisarQueParei();
   }
 
   try {
@@ -836,6 +1097,7 @@ async function enviar(conteudo = null, tipo = "texto") {
     if (conteudo === null) {
       elTexto.value = texto;
       atualizarBotoesDeEnvio();
+      ajustarAlturaDoCampo();
       if (respostaEnviada) {
         respondendoA = respostaEnviada;
         if (elRespostaAutor) elRespostaAutor.textContent = nomeDeExibicao(respostaEnviada.autor);
@@ -881,6 +1143,9 @@ async function gravarAudio() {
   }
 
   try {
+    // Deixar o formato a cargo do navegador: o Safari do iPhone não grava
+    // webm, e forçar esse tipo produzia um arquivo que nenhum aparelho
+    // conseguia reproduzir depois.
     gravador = new MediaRecorder(stream);
   } catch (err) {
     console.error("MediaRecorder indisponível:", err);
@@ -898,8 +1163,15 @@ async function gravarAudio() {
 
     try {
       Core.aviso("Enviando áudio...");
-      const blob = new Blob(pedacos, { type: "audio/webm" });
-      const url = await subirArquivo("audios", blob, "webm");
+
+      // O tipo real vem do gravador (audio/webm no Chrome, audio/mp4 no
+      // Safari). Antes tudo virava "webm" na marra e o áudio gravado no
+      // iPhone chegava quebrado do outro lado.
+      const tipo = (gravador?.mimeType || pedacos[0]?.type || "audio/webm").split(";")[0];
+      const extensao = tipo.includes("mp4") ? "m4a" : tipo.includes("ogg") ? "ogg" : "webm";
+
+      const blob = new Blob(pedacos, { type: tipo });
+      const url = await subirArquivo("audios", blob, extensao);
       await enviar(url, "audio");
       Core.aviso("Áudio enviado!", "#00a884");
     } catch (err) {
@@ -931,7 +1203,13 @@ function abrirGaleria() {
 
     try {
       Core.aviso("Enviando imagem...");
-      const url = await subirArquivo("imagens", arquivo, "jpg");
+
+      // A extensão sai do tipo real do arquivo: um PNG ou um WebP eram
+      // salvos como ".jpg", o que confundia quem baixasse a imagem depois.
+      const mapaExtensao = { "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/heic": "heic" };
+      const extensao = mapaExtensao[arquivo.type] || "jpg";
+
+      const url = await subirArquivo("imagens", arquivo, extensao);
       await enviar(url, "imagem");
       Core.aviso("Imagem enviada!", "#00a884");
     } catch (err) {
@@ -950,9 +1228,18 @@ function abrirGaleria() {
 function iniciarChamada(tipo) {
   Radar.emit({ type: "chamada", to: outroUsuario, content: tipo });
 
-  const url = new URLSearchParams({ u: outroUsuario, papel: "emissor" });
-  if (tipo === "audio") url.set("audio", "true");
-  window.location.href = `chamada.html?${url.toString()}`;
+  const params = new URLSearchParams({ u: outroUsuario, papel: "emissor" });
+  if (tipo === "audio") params.set("audio", "true");
+
+  // A chamada abre numa janela própria: assim ela continua viva enquanto você
+  // navega pelo app. Antes, sair de chamada.html derrubava a chamada na hora,
+  // porque a conexão WebRTC vive no contexto daquela página.
+  //
+  // Se o navegador bloquear a janela (pop-up recusado), cai no comportamento
+  // antigo de navegar na própria aba.
+  if (!abrirJanelaDeChamada(params)) {
+    window.location.href = `chamada.html?${params.toString()}`;
+  }
 }
 
 // ==========================================================================
@@ -1037,6 +1324,7 @@ async function iniciarComoGrupo() {
 }
 
 async function iniciar() {
+  ajustarAlturaDoCampo();
   sessaoAtual = await sessao();
   montarAvatarNav();
 
@@ -1047,10 +1335,26 @@ async function iniciar() {
     return; // erro já tratado e avisado dentro da função específica
   }
 
+  escutarConversa();
+}
+
+/**
+ * Liga a escuta em tempo real. Separada de iniciar() porque o listener é
+ * desligado ao sair da página e precisa voltar quando a pessoa retorna sem
+ * recarregar (minimizar o navegador e abrir de novo).
+ */
+function escutarConversa() {
+  if (pararDeEscutar || !chatId || !sessaoAtual) return;
   pararDeEscutar = escutarMensagens(chatId, (lista) => {
     mensagensAoVivo = lista;
     redesenharComHistorico();
   });
+}
+
+function pararEscuta() {
+  if (!pararDeEscutar) return;
+  pararDeEscutar();
+  pararDeEscutar = null;
 }
 
 // --------------------------------------------------------------------------
@@ -1059,17 +1363,26 @@ async function iniciar() {
 // --------------------------------------------------------------------------
 
 elTexto?.addEventListener("input", aoDigitar);
-elTexto?.addEventListener("keypress", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    enviar();
-  }
+// Sair do campo também encerra o aviso: antes, se você digitasse e saísse sem
+// mandar nada, a outra ponta ficava esperando o tempo correr.
+elTexto?.addEventListener("blur", avisarQueParei);
+
+// Enter envia; Shift+Enter (ou Ctrl+Enter) quebra a linha. keydown em vez de
+// keypress, que está depreciado e não dispara em parte dos teclados virtuais.
+// isComposing evita enviar no meio de um acento sendo composto.
+elTexto?.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.altKey || e.isComposing) return;
+  e.preventDefault();
+  enviar();
 });
 
 // Carrega mais histórico automaticamente perto do topo, além do botão
 // manual — o botão continua existindo pra quem preferir tocar nele.
 elMensagens?.addEventListener("scroll", () => {
   if (elMensagens.scrollTop < 80) carregarMaisAntigas();
+  // Chegou no fim por conta própria: o aviso de novas mensagens já cumpriu
+  // o papel dele.
+  if (estaNoFim()) esconderPilulaDeNovas();
 });
 
 document.getElementById("btnEnviar")?.addEventListener("click", () => enviar());
@@ -1081,19 +1394,53 @@ document.querySelector('[data-acao="voltar"]')?.addEventListener("click", () => 
   if (document.referrer && !document.referrer.includes("chat.html")) window.history.back();
   else window.location.href = "inbox.html";
 });
-document.querySelector('[data-acao="abrir-perfil"]')?.addEventListener("click", () => {
+const elCabecalhoContato = document.querySelector('[data-acao="abrir-perfil"]');
+
+function abrirPerfilDoContato() {
   if (modoGrupo) {
     Core.aviso("Informações do grupo em breve.", "#e0a800");
     return;
   }
   window.location.href = `perfil.html?u=${encodeURIComponent(outroUsuario)}`;
+}
+
+elCabecalhoContato?.addEventListener("click", abrirPerfilDoContato);
+// O elemento tem role="button" e tabindex="0" no HTML, mas não respondia a
+// teclado nenhum — quem navega por Tab não conseguia abrir o perfil.
+elCabecalhoContato?.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  abrirPerfilDoContato();
 });
 
 // pagehide é mais confiável que beforeunload no Safari do iPhone, onde
 // beforeunload muitas vezes não dispara.
 window.addEventListener("pagehide", () => {
-  if (pararDeEscutar) pararDeEscutar();
+  // Fechar a aba, voltar para a caixa de entrada ou trocar de app no meio de
+  // uma frase não avisava nada: a outra ponta ficava com a bolha acesa até o
+  // relógio de 3 s correr. O aviso sai antes de o socket cair.
+  avisarQueParei();
+  pararEscuta();
   marcarComoLido();
+});
+
+// Minimizar o navegador e voltar NÃO recarrega a página: ela volta do cache de
+// retorno (bfcache) com o listener já desligado pelo pagehide acima. Sem
+// religar aqui, a conversa ficava congelada — nenhuma mensagem nova aparecia
+// até recarregar na mão.
+window.addEventListener("pageshow", (evento) => {
+  if (!evento.persisted) return;
+  escutarConversa();
+
+  // Os timers ficam CONGELADOS enquanto a página está no cache de retorno, e
+  // o Safari do iPhone não dispara visibilitychange ao voltar pelo histórico.
+  // Sem esta conferência, um "digitando…" de minutos atrás reaparecia aceso e
+  // só sumia no primeiro tique do intervalo — quando ele voltava a correr.
+  conferirDigitando();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") escutarConversa();
 });
 
 iniciar();

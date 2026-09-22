@@ -72,6 +72,11 @@ export function sessao({ exigirLogin = true } = {}) {
   }
 
   return promessaSessao.then((s) => {
+    // tema.js esconde a tela até aqui (ver a classe "aguardando-sessao").
+    if (s || !exigirLogin) {
+      document.documentElement.classList.remove("aguardando-sessao");
+    }
+
     if (!s && exigirLogin) {
       try { localStorage.clear(); } catch (_) {}
       window.location.replace("login.html");
@@ -87,6 +92,25 @@ export function sessao({ exigirLogin = true } = {}) {
 export function encerrarSessao() {
   promessaSessao = null;
   try { localStorage.clear(); } catch (_) {}
+}
+
+/**
+ * Atualiza o perfil já resolvido nesta aba, sem uma nova ida ao Firestore.
+ * Sem isto, salvar nome ou foto só aparecia depois de recarregar a página,
+ * porque a promessa de sessão fica em cache no módulo.
+ */
+export function atualizarPerfilEmCache(campos) {
+  if (!promessaSessao || !campos) return;
+
+  promessaSessao = promessaSessao.then((s) => {
+    if (s?.perfil) Object.assign(s.perfil, campos);
+    return s;
+  });
+
+  try {
+    if (campos.nome) localStorage.setItem("nome", campos.nome);
+    if (campos.foto) localStorage.setItem("foto", campos.foto);
+  } catch (_) {}
 }
 
 // ==========================================================================
@@ -306,10 +330,36 @@ export async function montarAvatarNav() {
 // ==========================================================================
 
 if ("serviceWorker" in navigator) {
+  // Havia um controlador antes desta página carregar? Se não havia, a troca de
+  // controle abaixo é só a primeira instalação — não é atualização e não deve
+  // recarregar nada.
+  const jaTinhaControlador = !!navigator.serviceWorker.controller;
+  let recarregando = false;
+
+  // O Service Worker novo chama skipWaiting() assim que instala, então ele
+  // assume o controle na hora. Só que a página ABERTA continua rodando os
+  // arquivos antigos até alguém recarregar.
+  //
+  // Sem isto, uma correção publicada podia demorar várias visitas para
+  // aparecer — a pessoa continuava vendo o bug já corrigido e jurando que
+  // nada tinha mudado.
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!jaTinhaControlador || recarregando) return;
+    recarregando = true;
+    window.location.reload();
+  });
+
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch((err) => {
-      console.error("Falha ao registrar o Service Worker:", err);
-    });
+    navigator.serviceWorker.register("/sw.js")
+      .then((registro) => {
+        // Procura versão nova a cada carregamento e de hora em hora, para quem
+        // deixa o app aberto o dia inteiro.
+        registro.update().catch(() => {});
+        setInterval(() => registro.update().catch(() => {}), 60 * 60 * 1000);
+      })
+      .catch((err) => {
+        console.error("Falha ao registrar o Service Worker:", err);
+      });
   });
 }
 
@@ -329,6 +379,7 @@ const Core = {
   buscarPerfilPorUsername,
   definirAvatar,
   montarAvatarNav,
+  atualizarPerfilEmCache,
 };
 
 export default Core;

@@ -3,7 +3,7 @@
 // Suba este número a cada publicação. Sem isso — e sem o handler de activate
 // que existia antes — o cache antigo nunca era removido e quem já tinha
 // instalado o app continuava com o HTML velho até limpar os dados do site.
-const VERSAO = "v2";
+const VERSAO = "v6";
 const CACHE_ESTATICO = `sinex-estatico-${VERSAO}`;
 
 const ARQUIVOS = [
@@ -21,7 +21,24 @@ const ARQUIVOS = [
   "/foto.html",
   "/chamada.html",
   "/aviso.html",
+  "/grupo-novo.html",
+
+  // O style.css é o único compartilhado; sem os CSS de cada tela, quem abrisse
+  // o app offline pela primeira vez via a página sem estilo nenhum.
   "/style.css",
+  "/inbox.css",
+  "/chat.css",
+  "/perfil.css",
+  "/explorar.css",
+  "/chamada.css",
+  "/cadastro.css",
+  "/login.css",
+  "/configuracoes.css",
+  "/configuracoes-tema.css",
+  "/editar-perfil.css",
+  "/foto.css",
+  "/aviso.css",
+  "/grupo-novo.css",
 
   // Módulos compartilhados
   "/tema.js",
@@ -29,6 +46,7 @@ const ARQUIVOS = [
   "/firebase.js",
   "/radar.js",
   "/mensagens.js",
+  "/chamada-flutuante.js",
 
   // Um módulo por tela
   "/index.js",
@@ -44,6 +62,7 @@ const ARQUIVOS = [
   "/configuracoes-tema.js",
   "/editar-perfil.js",
   "/foto.js",
+  "/grupo-novo.js",
 
   "/manifest.json",
   "/assets/icone-192.png",
@@ -61,9 +80,15 @@ self.addEventListener("install", (evento) => {
 
       // cache.addAll é tudo-ou-nada: um único 404 na lista derrubava a
       // instalação inteira em silêncio. Aqui cada arquivo é independente.
+      //
+      // { cache: "reload" } é obrigatório: cache.add(url) passa pelo cache
+      // HTTP do navegador, então o Service Worker novo pré-cacheava a versão
+      // ANTIGA dos arquivos que ainda estivessem dentro do max-age. Era isso
+      // que fazia uma correção publicada não chegar em quem já usava o app —
+      // o bug continuava na tela dos outros por mais uma hora, no mínimo.
       await Promise.all(
         ARQUIVOS.map((url) =>
-          cache.add(url).catch((err) => {
+          cache.add(new Request(url, { cache: "reload" })).catch((err) => {
             console.warn(`[sw] não foi possível pré-cachear ${url}:`, err);
           })
         )
@@ -113,17 +138,26 @@ self.addEventListener("fetch", (evento) => {
   if (url.origin !== self.location.origin) return;
 
   // Navegação: rede primeiro (para pegar deploys novos), cache como reserva.
+  //
+  // A chave do cache é só o caminho, sem a query. Guardar a URL inteira criava
+  // uma entrada nova para CADA conversa aberta (chat.html?u=fulano,
+  // chat.html?u=ciclano, ...) e o cache crescia sem limite, enquanto o mesmo
+  // chat.html era baixado de novo a cada contato diferente.
   if (ehNavegacao(request)) {
+    const chave = new Request(url.origin + url.pathname);
+
     evento.respondWith(
       (async () => {
         try {
           const resposta = await fetch(request);
-          const cache = await caches.open(CACHE_ESTATICO);
-          cache.put(request, resposta.clone());
+          if (resposta && resposta.ok && resposta.type === "basic") {
+            const cache = await caches.open(CACHE_ESTATICO);
+            cache.put(chave, resposta.clone());
+          }
           return resposta;
         } catch (_) {
           return (
-            (await caches.match(request)) ||
+            (await caches.match(chave)) ||
             (await caches.match("/index.html")) ||
             Response.error()
           );
@@ -154,5 +188,16 @@ self.addEventListener("fetch", (evento) => {
     return;
   }
 
-  evento.respondWith(fetch(request).catch(() => caches.match(request) || Response.error()));
+  evento.respondWith(
+    (async () => {
+      try {
+        return await fetch(request);
+      } catch (_) {
+        // caches.match devolve uma promessa que pode resolver em undefined —
+        // e respondWith(undefined) quebra a requisição em vez de falhar
+        // graciosamente.
+        return (await caches.match(request)) || Response.error();
+      }
+    })()
+  );
 });

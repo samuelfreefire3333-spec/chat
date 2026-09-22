@@ -51,31 +51,56 @@ function linhaDeUsuario(dados) {
   return link;
 }
 
+/**
+ * Busca por prefixo: U+F8FF fica no fim da área de uso privado, então o
+ * intervalo [termo, termo+U+F8FF] pega tudo que começa com o digitado.
+ */
+function consultaDePrefixo(campo, prefixo) {
+  return getDocs(
+    query(
+      collection(db, "usuarios"),
+      orderBy(campo),
+      startAt(prefixo),
+      endAt(`${prefixo}\uf8ff`),
+      limit(20)
+    )
+  ).catch(() => null);
+}
+
 async function buscar(termo) {
   const estaBusca = ++buscaEmCurso;
 
   try {
-    // Busca por prefixo: U+F8FF fica no fim da área de uso privado, então o
-    // intervalo [termo, termo+U+F8FF] pega tudo que começa com o digitado.
+    // A busca só olhava o nome de usuário: procurar por "Maria" não achava
+    // ninguém se o @ dela fosse "mari_98". Agora o nome de exibição também
+    // entra na conta.
     //
-    // O endAt() estava sem o sufixo U+F8FF (endAt(`${termo}`) é só o próprio
-    // termo), então a consulta só batia com usuário == termo exato — a busca
-    // "por prefixo" na prática só funcionava para o nome de usuário completo.
-    const snap = await getDocs(
-      query(
-        collection(db, "usuarios"),
-        orderBy("usuario"),
-        startAt(termo),
-        endAt(`${termo}\uf8ff`),
-        limit(20)
-      )
-    );
+    // O Firestore compara texto byte a byte, então o prefixo do nome precisa
+    // respeitar maiúsculas. Tentamos a forma digitada e a forma capitalizada,
+    // que cobre o jeito como as pessoas de fato escrevem o próprio nome.
+    const capitalizado = termo.charAt(0).toUpperCase() + termo.slice(1);
+    const variantesDeNome = capitalizado === termo ? [termo] : [termo, capitalizado];
+
+    const respostas = await Promise.all([
+      consultaDePrefixo("usuario", termo),
+      ...variantesDeNome.map((v) => consultaDePrefixo("nome", v)),
+    ]);
 
     if (estaBusca !== buscaEmCurso) return; // chegou uma busca mais nova
 
-    const encontrados = snap.docs
-      .map((d) => d.data())
-      .filter((u) => u.usuario && u.usuario !== sessaoAtual.username);
+    // Um mesmo perfil pode voltar em mais de uma consulta.
+    const porUsuario = new Map();
+    respostas.forEach((snap) => {
+      snap?.docs.forEach((d) => {
+        const dados = d.data();
+        if (dados.usuario) porUsuario.set(dados.usuario, dados);
+      });
+    });
+
+    const encontrados = [...porUsuario.values()]
+      .filter((u) => u.usuario !== sessaoAtual.username)
+      .sort((a, b) => String(a.nome || a.usuario).localeCompare(String(b.nome || b.usuario), "pt-BR"))
+      .slice(0, 20);
 
     if (!encontrados.length) {
       elLista.replaceChildren(mensagem("Nenhum usuário encontrado."));

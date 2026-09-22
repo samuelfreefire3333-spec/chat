@@ -104,9 +104,19 @@ service cloud.firestore {
           && request.resource.data.remetenteUid == meuUID()
           && request.resource.data.timestamp is timestamp;
           
-        // Mensagem enviada não se reescreve; apagar fica com o remetente.
+        // Mensagem enviada não se reescreve.
         allow update: if false;
-        allow delete: if participanteDoChat() && resource.data.remetenteUid == meuUID();
+
+        // Apagar fica com qualquer participante da conversa, e não só com o
+        // remetente. A regra anterior tornava impossível apagar uma conversa:
+        // apagarChat() remove as mensagens em lotes (writeBatch), o lote é
+        // tudo-ou-nada, e bastava UMA mensagem da outra pessoa para o lote
+        // inteiro ser recusado — a conversa nunca era apagada de verdade e a
+        // tela só mostrava "não foi possível apagar".
+        //
+        // É também o que a confirmação na tela promete: "as mensagens serão
+        // excluídas para todos os participantes".
+        allow delete: if participanteDoChat();
       }
     }
 

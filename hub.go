@@ -23,6 +23,7 @@ type Message struct {
 var tiposPermitidos = map[string]bool{
 	"chat":             true,
 	"digitando":        true,
+	"parou_digitando":  true,
 	"status_check":     true,
 	"chamada":          true,
 	"cancelar_chamada": true,

@@ -62,8 +62,8 @@ async function fazerLogin() {
 btn.addEventListener("click", fazerLogin);
 
 [elEmail, elSenha].forEach((campo) => {
-  campo.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
+  campo.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.isComposing) {
       e.preventDefault();
       fazerLogin();
     }

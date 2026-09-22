@@ -133,6 +133,9 @@ async function configurarBotaoSeguir(e) {
 // MODAL DE SEGUIDORES / SEGUINDO (ARQUITETURA INSTAGRAM TABS)
 // ==========================================================================
 
+// Contador simples, e não Date.now(): duas trocas de aba no mesmo
+// milissegundo recebiam o mesmo "ticket" e a renderização antiga continuava
+// escrevendo por cima da nova.
 let sessaoModal = 0;
 let tabAtual = "seguidores"; 
 
@@ -172,8 +175,7 @@ function alternarTab(tipo) {
 async function carregarListaDeUsuarios(tipo) {
   if (!modalLista || !conteudoLista) return;
 
-  const estaSessao = Date.now();
-  sessaoModal = estaSessao; // Trava contra Race Conditions
+  const estaSessao = ++sessaoModal; // Trava contra Race Conditions
   
   conteudoLista.replaceChildren(mensagemDoModal("Carregando..."));
 
@@ -267,8 +269,17 @@ function abrirModal(tipo) {
 function fecharModal() {
   modalLista.style.opacity = "0";
   setTimeout(() => { modalLista.style.display = "none"; }, 200);
-  sessaoModal = 0; // Desativa renderizações pendentes
+  sessaoModal++; // Desativa renderizações pendentes
 }
+
+// Fechar com Esc e clicando fora: o modal só tinha o "x", o que é frustrante
+// em qualquer tela e inacessível para quem usa teclado.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && modalLista?.style.display === "flex") fecharModal();
+});
+modalLista?.addEventListener("click", (e) => {
+  if (e.target === modalLista) fecharModal();
+});
 
 // ==========================================================================
 // INICIALIZAÇÃO CRÍTICA (BOOTSTRAP DE EVENTOS)

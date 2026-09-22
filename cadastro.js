@@ -97,6 +97,15 @@ async function fazerCadastro() {
       lastSeen: Date.now(),
     });
 
+    // O cache de exibição precisa existir ANTES de sair desta página: as telas
+    // internas ficam escondidas até a sessão resolver, e a conta recém-criada
+    // ainda não passou por Core.sessao() nenhuma vez.
+    try {
+      localStorage.setItem("usuario", usuario);
+      localStorage.setItem("nome", nome);
+      localStorage.setItem("foto", AVATAR_PADRAO);
+    } catch (_) { /* modo privado do navegador */ }
+
     window.location.replace("inbox.html");
   } catch (erro) {
     console.error("Erro no cadastro:", erro);
@@ -124,9 +133,11 @@ elUsuario.addEventListener("blur", () => {
   if (limpo && limpo !== elUsuario.value.trim()) elUsuario.value = limpo;
 });
 
+// keydown, e não keypress: keypress está depreciado e não dispara em parte
+// dos teclados virtuais de Android.
 [elNome, elUsuario, elEmail, elSenha].forEach((campo) => {
-  campo.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
+  campo.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.isComposing) {
       e.preventDefault();
       fazerCadastro();
     }

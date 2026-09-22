@@ -15,6 +15,11 @@ let pararDeEscutar = null;
 let conversas = [];
 const cachePerfis = new Map();
 
+// Presença recebida pelo WebSocket, guardada fora do DOM. A lista inteira é
+// redesenhada a cada atualização do Firestore; sem esta memória, todo mundo
+// voltava para "Offline" sempre que qualquer conversa recebia uma mensagem.
+const presenca = new Map(); // username -> "online" | "offline"
+
 // Estado do modo de seleção múltipla.
 let modoSelecao = false;
 const selecionados = new Set();
@@ -130,9 +135,11 @@ function montarCard(chat) {
   if (ehGrupo) {
     status.textContent = `${chat.participantes.length} participantes`;
   } else {
+    const online = presenca.get(chat.outroUsuario) === "online";
     status.id = `status-inbox-${chat.outroUsuario}`;
-    status.dataset.online = "false";
-    status.textContent = textoDeStatus(perfil);
+    status.dataset.online = online ? "true" : "false";
+    status.classList.toggle("online", online);
+    status.textContent = online ? "Online" : textoDeStatus(perfil);
   }
 
   const previa = document.createElement("span");
@@ -202,12 +209,14 @@ window.addEventListener("mensagem_servidor", (e) => {
   if (!el) return;
 
   if (msg.content === "online") {
+    presenca.set(msg.from, "online");
     el.textContent = "Online";
     el.dataset.online = "true";
     el.classList.add("online");
     return;
   }
 
+  presenca.set(msg.from, "offline");
   el.dataset.online = "false";
   el.classList.remove("online");
   const perfil = cachePerfis.get(msg.from);
@@ -251,9 +260,16 @@ function aplicarEstadoDeSelecao() {
   });
 }
 
+// Momento em que a seleção foi ligada pelo toque longo. Ao soltar o dedo o
+// navegador dispara um "click" no mesmo card: sem esta trava, esse clique
+// desmarcava na hora o item recém-selecionado e o modo de seleção fechava
+// sozinho — no celular era impossível selecionar qualquer conversa.
+let selecaoAtivadaEm = 0;
+
 function ativarModoSelecao(chatId) {
   if (modoSelecao) return;
   modoSelecao = true;
+  selecaoAtivadaEm = Date.now();
   selecionados.add(chatId);
   navigator.vibrate?.(50);
   aplicarEstadoDeSelecao();
@@ -401,6 +417,12 @@ window.addEventListener("scroll", fecharMenuContexto, true);
 // --------------------------------------------------------------------------
 
 let timerPressao = null;
+let inicioPressao = null;
+
+// Um dedo nunca fica perfeitamente parado. A versão anterior cancelava o
+// toque longo no primeiro pointermove, então ele praticamente nunca chegava
+// aos 500 ms num celular de verdade. Mesma tolerância já usada no chat.
+const LIMIAR_MOVIMENTO = 10; // px
 
 function itemAlvo(evento) {
   return evento.target.closest(".chat-item");
@@ -412,6 +434,8 @@ listaEl?.addEventListener("click", (e) => {
 
   if (modoSelecao) {
     e.preventDefault();
+    // Ignora o clique gerado pelo próprio toque longo que abriu a seleção.
+    if (Date.now() - selecaoAtivadaEm < 400) return;
     alternarSelecao(item.dataset.chatId);
   } else if (item.dataset.tipo === "grupo") {
     window.location.href = `chat.html?g=${encodeURIComponent(item.dataset.chatId)}`;
@@ -438,19 +462,38 @@ listaEl?.addEventListener("contextmenu", (e) => {
 function iniciarPressaoLonga(e) {
   const item = itemAlvo(e);
   if (!item || modoSelecao) return;
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+
   clearTimeout(timerPressao);
-  timerPressao = setTimeout(() => ativarModoSelecao(item.dataset.chatId), 500);
+  inicioPressao = { x: e.clientX, y: e.clientY };
+  item.classList.add("pressionando");
+
+  timerPressao = setTimeout(() => {
+    item.classList.remove("pressionando");
+    ativarModoSelecao(item.dataset.chatId);
+  }, 500);
+}
+
+function moverDurantePressao(e) {
+  if (!timerPressao || !inicioPressao) return;
+  const dx = e.clientX - inicioPressao.x;
+  const dy = e.clientY - inicioPressao.y;
+  if (Math.hypot(dx, dy) > LIMIAR_MOVIMENTO) cancelarPressaoLonga();
 }
 
 function cancelarPressaoLonga() {
   clearTimeout(timerPressao);
+  timerPressao = null;
+  inicioPressao = null;
+  listaEl?.querySelectorAll(".chat-item.pressionando")
+    .forEach((el) => el.classList.remove("pressionando"));
 }
 
 listaEl?.addEventListener("pointerdown", iniciarPressaoLonga);
 listaEl?.addEventListener("pointerup", cancelarPressaoLonga);
 listaEl?.addEventListener("pointerleave", cancelarPressaoLonga);
 listaEl?.addEventListener("pointercancel", cancelarPressaoLonga);
-listaEl?.addEventListener("pointermove", cancelarPressaoLonga);
+listaEl?.addEventListener("pointermove", moverDurantePressao);
 
 // ==========================================================================
 // BARRA DE SELEÇÃO
@@ -499,14 +542,24 @@ function montarBarraDeSelecao() {
 // INICIALIZAÇÃO
 // ==========================================================================
 
+let iniciando = false;
+
 async function iniciar() {
+  // Guarda contra duas chamadas simultâneas (pageshow + visibilitychange
+  // disparam quase juntos ao voltar para o app), que abririam dois listeners.
+  if (iniciando || pararDeEscutar) return;
+  iniciando = true;
+
   sessaoAtual = await sessao();
   montarBarraDeSelecao();
   montarAvatarNav();
 
+  // textContent apagava o <svg> da setinha que está dentro do <h1>. O nome
+  // agora vai num <span> próprio e o ícone continua onde estava.
   const cabecalhoNome = document.getElementById("headerNomeUsuario");
   if (cabecalhoNome) {
-    cabecalhoNome.textContent = sessaoAtual.perfil?.nome || sessaoAtual.username;
+    const alvo = cabecalhoNome.querySelector("[data-nome]") || cabecalhoNome;
+    alvo.textContent = sessaoAtual.perfil?.nome || sessaoAtual.username;
   }
 
   // Zera o contador de não lidas ao abrir a caixa de entrada.
@@ -570,10 +623,24 @@ async function iniciar() {
       listaEl.appendChild(erro);
     }
   );
+
+  iniciando = false;
 }
 
 window.addEventListener("pagehide", () => {
   if (pararDeEscutar) pararDeEscutar();
+  pararDeEscutar = null;
+});
+
+// Voltar do cache de retorno (minimizar e reabrir o navegador) não recarrega
+// a página, e o listener já tinha sido desligado acima. Sem religar aqui, a
+// caixa de entrada ficava congelada no estado de antes.
+window.addEventListener("pageshow", (evento) => {
+  if (evento.persisted) iniciar();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") iniciar();
 });
 
 iniciar();

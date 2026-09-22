@@ -224,15 +224,25 @@ export async function reagirMensagem(chatId, mensagemId, uid, emojiAtual, emojiE
   }
 }
 
-/** Converte um QueryDocumentSnapshot de mensagem no formato que a UI usa. */
+/**
+ * Converte um QueryDocumentSnapshot de mensagem no formato que a UI usa.
+ *
+ * serverTimestamps: "estimate" faz o SDK devolver uma estimativa local
+ * enquanto o servidor não confirma o horário. Sem isso o campo vinha null, a
+ * mensagem recém-enviada ficava com timestamp 0 e caía para o começo da
+ * ordenação — numa conversa com mais de LIMITE_HISTORICO mensagens ela
+ * simplesmente não aparecia até o servidor responder.
+ *
+ * "pendente" passa a vir de metadata.hasPendingWrites, que é a informação
+ * correta para isso (com a estimativa ligada, o timestamp nunca mais é null).
+ */
 function paraMensagem(d) {
-  const dados = d.data();
+  const dados = d.data({ serverTimestamps: "estimate" });
   return {
     id: d.id,
     ...dados,
-    // Enquanto o servidor não confirma, timestamp vem null.
     timestampMs: paraMillis(dados.timestamp),
-    pendente: dados.timestamp === null,
+    pendente: d.metadata.hasPendingWrites,
   };
 }
 

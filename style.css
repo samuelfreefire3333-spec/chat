@@ -497,6 +497,96 @@ html, body {
    <pagina>.css dela.
 ========================================================= */
 .u-hidden { display: none; }
+
+/* =========================================================
+   BARRA DE CHAMADA EM ANDAMENTO
+   Aparece em TODAS as telas enquanto existe uma chamada viva
+   na janela dedicada (ver chamada-flutuante.js). Sem ela, sair
+   de chamada.html nao deixava nenhum vestigio de que havia uma
+   chamada rolando.
+========================================================= */
+.barra-chamada {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    padding-top: calc(8px + env(safe-area-inset-top));
+    background: linear-gradient(135deg, #0f9d58, #0b8043);
+    color: #fff;
+    font-size: 13.5px;
+    font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .35);
+    z-index: 100000;
+}
+.barra-chamada.visivel { display: flex; }
+
+.barra-chamada-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255, 255, 255, .55);
+    flex-shrink: 0;
+}
+.barra-chamada-texto {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+    min-width: 0;
+    flex: 1;
+}
+.barra-chamada-texto strong {
+    font-size: 13.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.barra-chamada-tempo {
+    font-size: 11.5px;
+    font-weight: 500;
+    opacity: .85;
+    font-variant-numeric: tabular-nums;
+}
+.barra-chamada-btn {
+    background: rgba(255, 255, 255, .2);
+    border: none;
+    color: #fff;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 7px 13px;
+    border-radius: 20px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background .15s ease, transform .12s ease;
+}
+.barra-chamada-btn:hover { background: rgba(255, 255, 255, .32); }
+.barra-chamada-btn:active { transform: scale(.94); }
+.barra-chamada-btn-encerrar { background: rgba(0, 0, 0, .28); }
+.barra-chamada-btn-encerrar:hover { background: rgba(0, 0, 0, .42); }
+
+/* Empurra o conteudo para baixo, em vez de a barra tapar o cabecalho. */
+body.com-barra-chamada .app-layout { padding-top: 48px; }
+
+@media (max-width: 480px) {
+    .barra-chamada { font-size: 12.5px; gap: 8px; padding: 7px 10px; }
+    .barra-chamada-btn { padding: 6px 10px; font-size: 11.5px; }
+}
+
+/* Sessao ainda nao resolvida: tema.js esconde a tela e core.js revela assim
+   que sabe quem esta logado. Antes a pagina simplesmente pulava para o login
+   quando o cache de exibicao faltava, o que derrubava quem estava logado. */
+html.aguardando-sessao {
+    background: var(--bg-main, #000);
+}
+html.aguardando-sessao body {
+    opacity: 0;
+    pointer-events: none;
+}
 .nav-item-final { margin-top: auto; margin-bottom: 20px; cursor: pointer; }
 .nav-item-elevado { position: relative; z-index: 9999; }
 .titulo-cabecalho { font-size: 18px; color: var(--text-main); }

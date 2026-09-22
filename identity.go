@@ -127,11 +127,27 @@ func (i *Identity) VerificarAdmin(ctx context.Context, idToken string) error {
 // do token e grava o uid no documento para as próximas conexões.
 func (i *Identity) usernameDoUID(ctx context.Context, tok *auth.Token) (string, error) {
 	i.mu.RLock()
-	if e, ok := i.cache[tok.UID]; ok && time.Now().Before(e.expiraEm) {
-		i.mu.RUnlock()
-		return e.username, nil
-	}
+	emCache, achou := i.cache[tok.UID]
 	i.mu.RUnlock()
+
+	if achou && time.Now().Before(emCache.expiraEm) {
+		// O username não muda, mas o status pode ter mudado há um segundo.
+		// Devolver o cache direto fazia o banimento demorar até 30 minutos
+		// para valer em conexões novas — e /admin/kick só derruba quem já
+		// está conectado, não impede uma reconexão logo em seguida.
+		//
+		// Uma leitura pontual por conexão é bem mais barata do que a consulta
+		// por campo que o caminho completo faz, e mantém a checagem correta.
+		doc, err := i.fsClient.Collection("usuarios").Doc(emCache.username).Get(ctx)
+		if err != nil {
+			return "", err
+		}
+		if contaBloqueada(doc.Data()) {
+			i.esquecer(tok.UID)
+			return "", ErrContaBloqueada
+		}
+		return emCache.username, nil
+	}
 
 	docs, err := i.fsClient.Collection("usuarios").
 		Where("uid", "==", tok.UID).Limit(1).Documents(ctx).GetAll()
@@ -168,7 +184,7 @@ func (i *Identity) usernameDoUID(ctx context.Context, tok *auth.Token) (string, 
 		}(doc.Ref, tok.UID)
 	}
 
-	if status, _ := doc.Data()["status"].(string); status == "banido" || status == "suspenso" {
+	if contaBloqueada(doc.Data()) {
 		return "", ErrContaBloqueada
 	}
 
@@ -178,10 +194,29 @@ func (i *Identity) usernameDoUID(ctx context.Context, tok *auth.Token) (string, 
 	}
 
 	i.mu.Lock()
+	// Teto simples: o mapa só cresce, e sem isto um servidor de vida longa
+	// acumularia uma entrada por uid que já conectou alguma vez.
+	if len(i.cache) > 10000 {
+		i.cache = make(map[string]cacheEntry)
+	}
 	i.cache[tok.UID] = cacheEntry{username: username, expiraEm: time.Now().Add(cacheTTL)}
 	i.mu.Unlock()
 
 	return username, nil
+}
+
+// contaBloqueada diz se o perfil está suspenso ou banido.
+func contaBloqueada(dados map[string]interface{}) bool {
+	status, _ := dados["status"].(string)
+	return status == "banido" || status == "suspenso"
+}
+
+// esquecer remove a entrada de cache de um uid, para que a próxima conexão
+// refaça a checagem completa.
+func (i *Identity) esquecer(uid string) {
+	i.mu.Lock()
+	delete(i.cache, uid)
+	i.mu.Unlock()
 }
 
 // RegistrarSaida grava o lastSeen no Firestore quando a última aba do usuário

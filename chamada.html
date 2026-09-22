@@ -29,7 +29,9 @@
         <!-- CAMADA DA INTERFACE DE USUÁRIO -->
         <div class="call-ui">
             <div class="chamada-topo-placeholder">
-                <!-- Ocultar minimizar por enquanto, volta ao chat encerrando ou programando picture-in-picture no futuro -->
+                <!-- O minimizar virou o botão de Picture-in-Picture na barra de
+                     controles: abre a chamada numa janela do sistema, por cima
+                     de qualquer programa. -->
             </div>
 
             <div class="chamada-coluna-central">
@@ -45,6 +47,10 @@
             </div>
 
             <div class="call-controls">
+                <button id="btnPip" class="btn-control" type="button" title="Minimizar em janela flutuante" aria-label="Minimizar em janela flutuante">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"></rect><rect x="12" y="12" width="8" height="6" rx="1" ry="1" fill="currentColor"></rect></svg>
+                </button>
+
                 <button id="btnMute" class="btn-control" type="button" title="Mutar microfone" aria-label="Desativar microfone" aria-pressed="false">
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
                 </button>

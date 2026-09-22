@@ -93,7 +93,15 @@
         .chat-item:hover {             
             background: var(--bg-hover);             
             transform: translateX(2px);         
-        }         
+        }
+        /* Retorno visual imediato do toque longo: o card "afunda" enquanto o
+           dedo esta pressionado, em vez de nada acontecer ate o modo de
+           selecao abrir do nada. Mesmo padrao das bolhas do chat. */
+        .chat-item.pressionando {
+            background: var(--bg-hover);
+            transform: scale(.97);
+        }
+        
         .chat-avatar {             
             width: 53px;             
             height: 53px;             

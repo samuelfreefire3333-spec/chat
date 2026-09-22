@@ -1,0 +1,38 @@
+# Quem serve este app é o Netlify (sinexchat.netlify.app).
+#
+# O firebase.json NÃO vale aqui: os headers dele — incluindo a
+# Content-Security-Policy inteira — só são aplicados pelo Firebase Hosting.
+# Enquanto este arquivo não existiu, o app esteve no ar sem CSP nenhuma,
+# mesmo com o README dizendo que ela era entregue como header HTTP.
+#
+# Qualquer mudança de header precisa acontecer nos DOIS arquivos.
+
+[build]
+  publish = "."
+
+# ---------------------------------------------------------------------------
+# Segurança — mesma política do firebase.json, palavra por palavra
+# ---------------------------------------------------------------------------
+[[headers]]
+  for = "/*"
+
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://www.gstatic.com; style-src 'self'; font-src 'self'; img-src 'self' data: blob: https://cdn-icons-png.flaticon.com https://firebasestorage.googleapis.com https://*.firebasestorage.app; media-src 'self' blob: https://firebasestorage.googleapis.com https://*.firebasestorage.app; connect-src 'self' stun: ws://localhost:* ws://127.0.0.1:* wss://sinex-backend-go.onrender.com https://sinex-backend-go.onrender.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://*.firebasestorage.app https://www.googleapis.com; worker-src 'self'; manifest-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-ancestors 'none'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(self), microphone=(self), geolocation=(), interest-cohort=()"
+    Cross-Origin-Opener-Policy = "same-origin"
+
+# ---------------------------------------------------------------------------
+# Cache
+# ---------------------------------------------------------------------------
+# O Netlify já serve os arquivos comuns com "public, max-age=0,
+# must-revalidate", que é exatamente o que se quer com nomes de arquivo sem
+# versão — por isso não há regra para js/css aqui.
+#
+# O Service Worker é o único que precisa ser explícito: é ele que decide
+# quando todo o resto é trocado, então nunca pode vir de cache.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

@@ -1,6 +1,6 @@
 import { db } from "./firebase.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import Core, { sessao, montarAvatarNav } from "./core.js";
+import Core, { sessao, montarAvatarNav, atualizarPerfilEmCache } from "./core.js";
 
 const LIMITE_NOME = 60;
 const LIMITE_BIO = 200;
@@ -36,7 +36,9 @@ async function salvarPerfil() {
     // usuário lido do localStorage.
     await updateDoc(doc(db, "usuarios", sessaoAtual.perfil.id), { nome, bio });
 
-    try { localStorage.setItem("nome", nome); } catch (_) {}
+    // Atualiza o perfil já resolvido nesta aba; antes, voltar para a tela de
+    // perfil sem recarregar ainda mostrava o nome e a bio antigos.
+    atualizarPerfilEmCache({ nome, bio });
     Core.aviso("Perfil atualizado com sucesso!", "#00a884");
 
     setTimeout(() => {

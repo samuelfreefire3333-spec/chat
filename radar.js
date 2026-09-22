@@ -1,5 +1,6 @@
 import Core, { sessao, urlSegura, AVATAR_PADRAO, buscarPerfilPorUsername } from "./core.js";
 import { registrarEventoDeChamada } from "./mensagens.js";
+import { abrirJanelaDeChamada, ligarBarraDeChamada } from "./chamada-flutuante.js";
 
 const URL_BACKEND = "wss://sinex-backend-go.onrender.com/ws";
 
@@ -23,6 +24,21 @@ const BACKOFF_MAX = 30000;
 //  - a reconexão usa backoff exponencial com jitter, em vez de bater de 3 em 3
 //    segundos para sempre enquanto o servidor gratuito acorda.
 
+// Eventos que só fazem sentido no instante em que acontecem. Guardá-los na
+// fila para reenviar depois era o que fazia "fulano está digitando..." brotar
+// do nada: o servidor gratuito dorme, o cliente acumula avisos de digitação, e
+// quando a conexão volta a fila inteira é despejada de uma vez do outro lado.
+// O mesmo valia para sinalização de chamada, que chegava atrasada e sem
+// sentido nenhum.
+const TIPOS_EFEMEROS = new Set([
+  "digitando",
+  "parou_digitando",
+  "status_check",
+  "webrtc",
+  "chamada",
+  "cancelar_chamada",
+]);
+
 const Radar = {
   estado: "desconectado", // desconectado | conectando | conectado
   socket: null,
@@ -31,11 +47,15 @@ const Radar = {
   emit(dados) {
     if (this.estado === "conectado" && this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(dados));
-    } else {
-      // Guarda no máximo 100 itens para não crescer sem limite offline.
-      if (this.fila.length < 100) this.fila.push(dados);
-      agendarReconexao();
+      return;
     }
+
+    // Só o que ainda vale a pena entregar mais tarde entra na fila (máximo de
+    // 100 itens, para não crescer sem limite offline).
+    if (!TIPOS_EFEMEROS.has(dados.type) && this.fila.length < 100) {
+      this.fila.push(dados);
+    }
+    agendarReconexao();
   },
 
   /** Pergunta ao servidor se alguém está online. */
@@ -91,11 +111,20 @@ async function conectar() {
   if (Radar.socket?.readyState === WebSocket.OPEN) return;
   if (!navigator.onLine) return;
 
-  const s = await sessao({ exigirLogin: false });
-  if (!s) return;
-
+  // A marcação vem ANTES do await. Antes ela vinha depois, e duas chamadas
+  // quase simultâneas (visibilitychange junto com o evento "online", por
+  // exemplo) passavam as duas pela checagem acima e abriam DOIS WebSockets.
+  // Cada um com seu onmessage, e cada evento do servidor chegava duplicado
+  // na página.
   conectando = true;
   Radar.estado = "conectando";
+
+  const s = await sessao({ exigirLogin: false });
+  if (!s) {
+    conectando = false;
+    Radar.estado = "desconectado";
+    return;
+  }
 
   let token;
   try {
@@ -117,6 +146,16 @@ async function conectar() {
     conectando = false;
     agendarReconexao();
     return;
+  }
+
+  // Um socket anterior que ainda não fechou de vez continuaria despachando
+  // eventos por conta própria.
+  if (Radar.socket && Radar.socket !== ws) {
+    const anterior = Radar.socket;
+    anterior.onmessage = null;
+    anterior.onclose = null;
+    anterior.onerror = null;
+    try { anterior.close(1000, "substituido"); } catch (_) {}
   }
 
   Radar.socket = ws;
@@ -330,7 +369,13 @@ export function renderizarBalaoChamada() {
 
     const params = new URLSearchParams({ u: dados.quemLiga, papel: "receptor" });
     if (ehAudio) params.set("audio", "true");
-    window.location.href = `chamada.html?${params.toString()}`;
+
+    // A chamada vai para uma janela própria: assim ela sobrevive a qualquer
+    // navegação no app. Se o navegador bloquear a janela, cai no
+    // comportamento antigo de navegar na própria aba.
+    if (!abrirJanelaDeChamada(params)) {
+      window.location.href = `chamada.html?${params.toString()}`;
+    }
   });
 
   btnRecusar.addEventListener("click", async () => {
@@ -415,6 +460,10 @@ document.addEventListener("visibilitychange", () => {
 // O lastSeen agora é gravado pelo servidor Go quando a última aba cai. O
 // cliente não escreve mais no Firestore de minuto em minuto (eram cerca de
 // 1.440 escritas por dia por pessoa ativa).
+
+// A barra de "chamada em andamento" precisa existir em toda tela. radar.js já
+// é carregado em todas elas, então é daqui que ela sobe.
+ligarBarraDeChamada();
 
 sessao({ exigirLogin: false }).then((s) => {
   if (!s) return;

@@ -33,12 +33,29 @@
   var temCache = false;
   try {
     temCache = !!localStorage.getItem("usuario");
-  } catch (_) {}
-
-  if (raiz.getAttribute("data-exige-login") === "sim" && !temCache) {
-    window.location.replace("login.html");
+  } catch (_) {
+    // Armazenamento bloqueado (aba anônima, navegador com escudos ligados):
+    // aqui não dá para saber nada. Tratado como "sem cache" — e, justamente
+    // por isso, nunca como motivo para expulsar ninguém.
   }
 
+  // A sessão de verdade vive no IndexedDB do Firebase Auth, que não dá para
+  // ler de forma síncrona neste ponto. A versão anterior mandava para o login
+  // sempre que o cache de exibição faltava: isso derrubava quem estava logado
+  // com o armazenamento limpo e, em aba anônima, criava um ping-pong infinito
+  // entre login.html e inbox.html (o cadastro nunca conseguia gravar o cache).
+  //
+  // Agora a página apenas fica escondida até Core.sessao() decidir. Quem não
+  // estiver logado é redirecionado de lá, onde a informação é confiável.
+  if (raiz.getAttribute("data-exige-login") === "sim" && !temCache) {
+    raiz.classList.add("aguardando-sessao");
+    // Rede de segurança: se o módulo falhar ao carregar, a tela não fica
+    // escondida para sempre.
+    setTimeout(function () { raiz.classList.remove("aguardando-sessao"); }, 4000);
+  }
+
+  // Na direção contrária o atalho é seguro: se o cache estiver velho,
+  // Core.sessao() limpa tudo e devolve a pessoa ao login.
   if (raiz.getAttribute("data-so-deslogado") === "sim" && temCache) {
     window.location.replace("inbox.html");
   }

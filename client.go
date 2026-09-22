@@ -14,8 +14,15 @@ const (
 	maxMessageSize = 65536 // 64KB — cabe uma oferta SDP folgada
 	authWait       = 10 * time.Second
 
-	// Limite de taxa: 30 mensagens por janela de 10s por conexão.
-	limiteMensagens = 30
+	// Limite de taxa por conexão. O teto anterior (30 por 10s) parecia
+	// generoso, mas o cliente avisa CADA participante individualmente quando
+	// alguém manda mensagem num grupo: num grupo de 20 pessoas, um único envio
+	// já gasta 19 quadros. Duas mensagens seguidas estouravam o limite e o
+	// servidor derrubava a conexão de quem estava só conversando.
+	//
+	// 150 por 10s continua barrando abuso de verdade (flood automatizado) sem
+	// punir uso normal em grupo.
+	limiteMensagens = 150
 	janelaLimite    = 10 * time.Second
 )
 

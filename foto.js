@@ -1,7 +1,7 @@
 import { db, storage } from "./firebase.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import Core, { sessao, definirAvatar } from "./core.js";
+import Core, { sessao, definirAvatar, atualizarPerfilEmCache } from "./core.js";
 
 const TAMANHO_MAXIMO = 400; // lado maior da imagem final
 const LIMITE_ARQUIVO = 10 * 1024 * 1024;
@@ -13,6 +13,7 @@ const btnEscolher = document.getElementById("btnEscolher");
 
 let sessaoAtual = null;
 let blobFinal = null;
+let previewObjectURL = null;
 
 /** Redimensiona no navegador para não subir uma foto de 8 MP como avatar. */
 function redimensionar(arquivo) {
@@ -69,7 +70,13 @@ async function prepararFoto(evento) {
 
   try {
     blobFinal = await redimensionar(arquivo);
-    elPreview.src = URL.createObjectURL(blobFinal);
+
+    // Cada troca de imagem criava um objeto novo e o anterior ficava preso na
+    // memória até a página ser fechada.
+    if (previewObjectURL) URL.revokeObjectURL(previewObjectURL);
+    previewObjectURL = URL.createObjectURL(blobFinal);
+
+    elPreview.src = previewObjectURL;
     btnSalvar.style.display = "flex";
   } catch (erro) {
     console.error("Erro ao preparar a foto:", erro);
@@ -96,7 +103,9 @@ async function salvarFoto() {
 
     await updateDoc(doc(db, "usuarios", sessaoAtual.perfil.id), { foto: url });
 
-    try { localStorage.setItem("foto", url); } catch (_) {}
+    // Atualiza também o perfil já carregado nesta aba: sem isso, voltar para
+    // o perfil sem recarregar continuava mostrando a foto antiga.
+    atualizarPerfilEmCache({ foto: url });
     Core.aviso("Foto atualizada com sucesso!", "#00a884");
 
     setTimeout(() => {
