@@ -7,8 +7,10 @@
 #
 # Qualquer mudança de header precisa acontecer nos DOIS arquivos.
 
-[build]
-  publish = "."
+ [build]
+-  publish = "."
++  command = "rm -rf dist && mkdir dist && cp *.html *.css *.js manifest.json dist/ && cp -r assets dist/"
++  publish = "dist"
 
 # ---------------------------------------------------------------------------
 # Segurança — mesma política do firebase.json, palavra por palavra
