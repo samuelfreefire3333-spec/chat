@@ -1,4 +1,5 @@
-# Quem serve este app é o Netlify (sinexchat.netlify.app).
+# Quem serve este app é o Netlify (sinexchat.netlify.app), com deploy
+# automático a cada commit no main do GitHub.
 #
 # O firebase.json NÃO vale aqui: os headers dele — incluindo a
 # Content-Security-Policy inteira — só são aplicados pelo Firebase Hosting.
@@ -7,10 +8,22 @@
 #
 # Qualquer mudança de header precisa acontecer nos DOIS arquivos.
 
- [build]
--  publish = "."
-+  command = "rm -rf dist && mkdir dist && cp *.html *.css *.js manifest.json dist/ && cp -r assets dist/"
-+  publish = "dist"
+# ---------------------------------------------------------------------------
+# Publicação — só o front-end vai para o ar
+# ---------------------------------------------------------------------------
+# Antes era publish = ".", e a pasta inteira ia para o ar: código Go, regras
+# do Firestore e do Storage, go.mod, README. Foi assim que o firebase-key.json
+# vazou.
+#
+# O comando abaixo é uma lista do que ENTRA, não do que sai. Um arquivo novo
+# na raiz só é publicado se for .html, .css ou .js; configuração, segredo e
+# código de servidor ficam de fora por padrão, sem ninguém precisar lembrar de
+# excluir nada.
+#
+# Se uma tela nova precisar de outro tipo de arquivo na raiz, acrescente aqui.
+[build]
+  command = "rm -rf dist && mkdir dist && cp *.html *.css *.js manifest.json dist/ && cp -r assets dist/"
+  publish = "dist"
 
 # ---------------------------------------------------------------------------
 # Segurança — mesma política do firebase.json, palavra por palavra
