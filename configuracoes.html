@@ -3,39 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    
-<!-- CONECTANDO AO SEU CSS MESTRE -->
+
     <link rel="stylesheet" href="style.css">
     <script src="tema.js"></script>
-<title>Configurações - Sinex Chat</title>
+    <title>Configurações - Sinex Chat</title>
     <link rel="manifest" href="manifest.json">
-    
-    <!-- ESTILOS EXCLUSIVOS DA TELA DE CONFIGURAÇÕES -->
+
     <link rel="stylesheet" href="configuracoes.css">
 </head>
 <body>
     <div class="app-layout">
-        
+
         <!-- NAVEGAÇÃO LATERAL -->
-        <nav class="side-nav">
-            <a href="inbox.html" class="nav-item" title="Página Inicial">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.005 16.545a2.997 2.997 0 0 1 2.997-2.997A2.997 2.997 0 0 1 15 16.545V22h7V11.543L12 2 2 11.543V22h7v-5.455Z"></path></svg>
+        <nav class="side-nav" aria-label="Navegação principal">
+            <a href="inbox.html" class="nav-item nav-logo" title="Sinex Chat" aria-label="Sinex Chat: início"><span class="nav-logo-letra" aria-hidden="true">S</span></a>
+            <a href="inbox.html" class="nav-item" title="Mensagens" aria-label="Mensagens">
+                <span id="badgeGlobal" class="badge u-hidden" aria-hidden="true">0</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
             </a>
-            <a href="explorar.html" class="nav-item" title="Pesquisa">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg>
-            </a>
-            <a href="inbox.html" class="nav-item" title="Mensagens">
-                <div id="badgeGlobal" class="badge u-hidden">0</div>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
-            </a>
-            <a href="perfil.html" class="nav-item" title="Perfil">
-                <img id="navAvatar" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Avatar">
-            </a>
-            
-            <!-- Botão ATIVO agora é o das Configurações -->
-            <a href="configuracoes.html" class="nav-item active nav-item-final" title="Mais">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="4" x2="21" y2="4"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="20" x2="21" y2="20"></line></svg>
-            </a>
+            <a href="explorar.html" class="nav-item" title="Pesquisar" aria-label="Pesquisar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg></a>
+            <a href="perfil.html" class="nav-item" title="Perfil" aria-label="Seu perfil"><img id="navAvatar" class="nav-avatar-icon" src="assets/avatar-padrao.svg" alt=""></a>
+            <a href="configuracoes.html" class="nav-item nav-item-final active" title="Mais" aria-label="Configurações" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="5" x2="21" y2="5"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="19" x2="21" y2="19"></line></svg></a>
         </nav>
 
         <!-- PAINEL DE CONFIGURAÇÕES -->
@@ -43,39 +31,100 @@
             <header class="settings-header">
                 <h1>Configurações</h1>
             </header>
-            
-          <div class="settings-content">
-                 
-                 <!-- BLOCO 1 -->
-                 <div class="settings-group">
-                     <a class="settings-item" href="configuracoes-tema.html">
-                         <div class="item-left">
-                             <span class="item-icon">🎨</span>
-                             <span class="item-text">Aparência e Tema</span>
-                         </div>
-                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-sec)" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                     </a> <!-- 🔴 CORRIGIDO AQUI: era </div>, agora é </a> -->
-                     
-                     <div class="settings-divider"></div>
-                     
-                     <!-- PAINEL PROFISSIONAL (Oculto por padrão com display: none) -->
-                     <a id="btnPainelAdmin" class="settings-item u-hidden" href="admin.html">
-                         <div class="item-left">
-                             <span class="item-icon">🛡️</span>
-                             <span class="item-text">Painel Profissional</span>
-                         </div>
-                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-sec)" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                     </a> <!-- 🔴 CORRIGIDO AQUI: era </div>, agora é </a> -->
-                 </div>
 
-                 <!-- BLOCO DE SAÍDA -->
-                 <button class="btn-logout" type="button" data-acao="sair">Sair da conta</button>
-             </div>
-    
-    <div id="toast-aviso">Alerta!</div>
+            <div class="settings-content">
 
-    <!-- MÓDULOS DE AUTENTICAÇÃO E FUNÇÕES -->
-<!-- Script de Tempo Real consolidado (Sem o Socket.io inútil) -->
+                <!-- Quem está logado -->
+                <a class="settings-perfil" href="perfil.html" aria-label="Ver seu perfil">
+                    <img id="configFoto" class="settings-perfil-foto" src="assets/avatar-padrao.svg" alt="">
+                    <span class="settings-perfil-info">
+                        <strong id="configNome"><span class="skeleton skeleton-texto"></span></strong>
+                        <span id="configUsuario">&nbsp;</span>
+                    </span>
+                    <svg class="item-seta" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </a>
+
+                <section class="settings-secao" aria-labelledby="tituloConta">
+                    <h2 id="tituloConta" class="settings-secao-titulo">Conta</h2>
+                    <div class="settings-group">
+                        <a class="settings-item" href="editar-perfil.html">
+                            <span class="item-left">
+                                <span class="item-icon" data-cor="azul" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg></span>
+                                <span class="item-textos">
+                                    <span class="item-text">Editar perfil</span>
+                                    <span class="item-sub">Nome e bio</span>
+                                </span>
+                            </span>
+                            <svg class="item-seta" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        </a>
+                        <div class="settings-divider"></div>
+                        <a class="settings-item" href="foto.html">
+                            <span class="item-left">
+                                <span class="item-icon" data-cor="roxo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"></path><circle cx="12" cy="13" r="4"></circle></svg></span>
+                                <span class="item-textos">
+                                    <span class="item-text">Foto do perfil</span>
+                                    <span class="item-sub">Trocar ou ajustar a foto</span>
+                                </span>
+                            </span>
+                            <svg class="item-seta" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        </a>
+                    </div>
+                </section>
+
+                <section class="settings-secao" aria-labelledby="tituloPreferencias">
+                    <h2 id="tituloPreferencias" class="settings-secao-titulo">Preferências</h2>
+                    <div class="settings-group">
+                        <a class="settings-item" href="configuracoes-tema.html">
+                            <span class="item-left">
+                                <span class="item-icon" data-cor="laranja" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path></svg></span>
+                                <span class="item-textos">
+                                    <span class="item-text">Aparência e tema</span>
+                                    <span id="temaAtual" class="item-sub">&nbsp;</span>
+                                </span>
+                            </span>
+                            <svg class="item-seta" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        </a>
+                        <div class="settings-divider"></div>
+                        <label class="settings-item" for="alternarSom">
+                            <span class="item-left">
+                                <span class="item-icon" data-cor="vermelho" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg></span>
+                                <span class="item-textos">
+                                    <span class="item-text">Som de nova mensagem</span>
+                                    <span class="item-sub">O toque de chamada continua ligado</span>
+                                </span>
+                            </span>
+                            <input id="alternarSom" class="alternador" type="checkbox" role="switch" checked>
+                        </label>
+                    </div>
+                </section>
+
+                <!-- Só aparece para administradores (quem autoriza é a regra do Firestore) -->
+                <section id="secaoAdmin" class="settings-secao u-hidden" aria-labelledby="tituloAdmin">
+                    <h2 id="tituloAdmin" class="settings-secao-titulo">Administração</h2>
+                    <div class="settings-group">
+                        <a id="btnPainelAdmin" class="settings-item" href="admin.html">
+                            <span class="item-left">
+                                <span class="item-icon" data-cor="verde" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path></svg></span>
+                                <span class="item-textos">
+                                    <span class="item-text">Painel Profissional</span>
+                                    <span class="item-sub">Moderação de contas</span>
+                                </span>
+                            </span>
+                            <svg class="item-seta" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                        </a>
+                    </div>
+                </section>
+
+                <button class="btn-logout" type="button" data-acao="sair">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    Sair da conta
+                </button>
+
+                <p class="settings-rodape">Sinex Chat</p>
+            </div>
+        </main>
+    </div>
+
     <script type="module" src="radar.js"></script>
     <script type="module" src="configuracoes.js"></script>
 </body>

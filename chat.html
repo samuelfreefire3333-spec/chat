@@ -17,14 +17,15 @@
 </head> 
 <body>     
     <div class="app-layout">                  
-        <nav class="side-nav">             
-            <a href="inbox.html" class="nav-item" title="Página Inicial"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.005 16.545a2.997 2.997 0 0 1 2.997-2.997A2.997 2.997 0 0 1 15 16.545V22h7V11.543L12 2 2 11.543V22h7v-5.455Z"></path></svg></a>             
-            <a href="explorar.html" class="nav-item" title="Pesquisa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg></a>             
-            <a href="inbox.html" class="nav-item active" title="Mensagens"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg></a>             
-            <a href="perfil.html" class="nav-item" title="Perfil"><img id="navAvatar" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" class="nav-avatar-icon"></a>                          
-            <a href="configuracoes.html" class="nav-item nav-item-final nav-item-elevado" title="Mais">                 
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="4" x2="21" y2="4"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="20" x2="21" y2="20"></line></svg>             
-            </a>         
+        <nav class="side-nav" aria-label="Navegação principal">
+            <a href="inbox.html" class="nav-item nav-logo" title="Sinex Chat" aria-label="Sinex Chat: início"><span class="nav-logo-letra" aria-hidden="true">S</span></a>
+            <a href="inbox.html" class="nav-item active" title="Mensagens" aria-label="Mensagens" aria-current="page">
+                <span id="badgeGlobal" class="badge u-hidden" aria-hidden="true">0</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
+            </a>
+            <a href="explorar.html" class="nav-item" title="Pesquisar" aria-label="Pesquisar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg></a>
+            <a href="perfil.html" class="nav-item" title="Perfil" aria-label="Seu perfil"><img id="navAvatar" class="nav-avatar-icon" src="assets/avatar-padrao.svg" alt=""></a>
+            <a href="configuracoes.html" class="nav-item nav-item-final nav-item-elevado" title="Mais" aria-label="Configurações"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="5" x2="21" y2="5"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="19" x2="21" y2="19"></line></svg></a>
         </nav>         
         
         <main class="chat-panel">                          
@@ -33,11 +34,11 @@
                     <button class="icon-btn btn-voltar-recuo" data-acao="voltar" type="button" aria-label="Voltar">                         
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>                     
                     </button>                                          
-                    <div class="header-user-info" data-acao="abrir-perfil" role="button" tabindex="0">                         
-                        <img id="fotoContato" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Foto">                         
+                    <div class="header-user-info" data-acao="abrir-perfil" role="button" tabindex="0" aria-label="Ver perfil do contato">                         
+                        <img id="fotoContato" src="assets/avatar-padrao.svg" alt="">                         
                         <div class="names">                             
-                            <div id="nomeContato">Carregando...</div>                             
-                            <div id="statusContato">Buscando status...</div>                         
+                            <div id="nomeContato"><span class="skeleton skeleton-texto"></span></div>                             
+                            <div id="statusContato">&nbsp;</div>                         
                         </div>                     
                     </div>                 
                 </div>                                  
@@ -57,10 +58,10 @@
                 </div>             
             </header>             
             
-            <div id="mensagens">                 
+            <div id="mensagens" role="region" aria-busy="true" aria-label="Mensagens da conversa">                 
                 <div id="indicador-digitando" class="msg-wrapper-other u-hidden">                     
-                    <img id="fotoDigitando" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Avatar">                     
-                    <div class="msg-bubble msg-other typing-dots"><span></span><span></span><span></span></div>                 
+                    <img id="fotoDigitando" src="assets/avatar-padrao.svg" alt="">                     
+                    <div class="msg-bubble msg-other typing-dots" role="status" aria-label="digitando"><span></span><span></span><span></span></div>                 
                 </div>             
             </div>             
             
@@ -74,24 +75,61 @@
                     <button id="btnCancelarResposta" type="button" class="reply-preview-fechar" aria-label="Cancelar resposta">×</button>
                 </div>
 
-                <div class="input-pill">                     
-                    <textarea id="texto" rows="1" maxlength="4000" placeholder="Mensagem..." autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" aria-label="Escreva sua mensagem"></textarea>                                          
-                    <div id="action-buttons" class="action-icons-group">                         
-                        <button class="input-icon-btn" data-acao="audio" type="button" title="Gravar áudio" aria-label="Gravar áudio">                             
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v1a7 7 0 0 1-14 0v-1"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>                         
-                        </button>                         
-                        <button class="input-icon-btn" data-acao="galeria" type="button" title="Enviar imagem" aria-label="Enviar imagem">                             
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>                         
-                        </button>                     
-                    </div>                     
-                    <button id="btnEnviar" class="btn-enviar-azul" type="button" title="Enviar" aria-label="Enviar mensagem">                         
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>                     
-                    </button>                 
-                </div>             
-            </div>         
+                <!-- Foto ou áudio subindo -->
+                <div id="envioEmAndamento" class="envio-andamento u-hidden" role="status" aria-live="polite">
+                    <span class="envio-giro" aria-hidden="true"></span>
+                    <span id="envioEmAndamentoTexto">Enviando…</span>
+                </div>
+
+                <!-- Emojis (montado pelo chat.js na primeira vez que abre) -->
+                <div id="painelEmojis" class="painel-emojis u-hidden" role="dialog" aria-label="Escolher emoji"></div>
+
+                <div class="input-pill">
+                    <!-- Imagens coladas ou arrastadas, esperando o Enviar -->
+                    <div id="anexosPendentes" class="anexos-pendentes u-hidden" role="group" aria-label="Imagens para enviar"></div>
+
+                    <!-- Celular: câmera redonda, como no Instagram. Computador: emoji. -->
+                    <button class="input-camera-btn" data-acao="camera" type="button" title="Câmera" aria-label="Tirar uma foto e enviar">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    </button>
+                    <button class="input-icon-btn input-emoji-inicio" data-acao="emojis" type="button" title="Emojis" aria-label="Escolher emoji" aria-haspopup="dialog" aria-expanded="false" aria-controls="painelEmojis">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                    </button>
+
+                    <textarea id="texto" rows="1" maxlength="4000" placeholder="Mensagem..." autocomplete="off" autocapitalize="sentences" spellcheck="true" enterkeyhint="send" aria-label="Escreva sua mensagem"></textarea>
+
+                    <!-- Gravando áudio: descartar, tempo e o nível da voz -->
+                    <div id="barraGravacao" class="barra-gravacao u-hidden">
+                        <button class="gravacao-descartar" data-acao="descartar-audio" type="button" title="Descartar" aria-label="Descartar áudio">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg>
+                        </button>
+                        <span class="gravacao-ponto" aria-hidden="true"></span>
+                        <span id="tempoGravacao" class="gravacao-tempo" role="timer" aria-label="Tempo de gravação">0:00</span>
+                        <span id="ondasGravacao" class="gravacao-ondas" aria-hidden="true"></span>
+                    </div>
+
+                    <div id="action-buttons" class="action-icons-group">
+                        <button class="input-icon-btn" data-acao="audio" type="button" title="Gravar áudio" aria-label="Gravar áudio">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v1a7 7 0 0 1-14 0v-1"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                        </button>
+                        <button class="input-icon-btn" data-acao="galeria" type="button" title="Enviar foto da galeria" aria-label="Enviar foto da galeria">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                        </button>
+                        <button class="input-icon-btn input-emoji-fim" data-acao="emojis" type="button" title="Emojis" aria-label="Escolher emoji" aria-haspopup="dialog" aria-expanded="false" aria-controls="painelEmojis">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                        </button>
+                        <button class="input-icon-btn input-curtir" data-acao="curtir" type="button" title="Enviar um coração" aria-label="Enviar um coração">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                        </button>
+                    </div>
+                    <button id="btnEnviar" class="btn-enviar-azul" type="button" title="Enviar" aria-label="Enviar mensagem">
+                        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </button>
+                </div>
+            </div>
         </main>     
     </div>     
-    <div id="toast-aviso">Alerta!</div>     
+
     
 <!-- Scripts Locais Otimizados -->
     <script type="module" src="radar.js"></script>

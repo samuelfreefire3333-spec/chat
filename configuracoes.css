@@ -1,122 +1,142 @@
+/* =========================================================
+   ⚙️ SINEX CHAT — CONFIGURAÇÕES
+   A lista (.settings-group, .settings-item, .item-icon...) é
+   componente compartilhado e mora no style.css.
+========================================================= */
+
 .settings-panel {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background: var(--bg-main);
-            overflow-y: auto;
-        }
-        
-        .settings-header {
-            width: 100%;
-            height: 86px;
-            display: flex;
-            align-items: center;
-            padding: 0 40px;
-            border-bottom: 1px solid var(--border-color);
-            flex-shrink: 0;
-            background: var(--bg-main);
-            position: sticky;
-            top: 0;
-            z-index: 5;
-            padding-top: env(safe-area-inset-top);
-        }
-        
-        .settings-header h1 {
-            font-size: 22px;
-            font-weight: 700;
-            letter-spacing: -.4px;
-            color: var(--text-main);
-        }
-        
-        .settings-content {
-            width: 100%;
-            max-width: 600px;
-            padding: 40px 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 24px;
-        }
-        
-        .settings-group {
-            background: var(--bg-panel-2);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.03);
-        }
-        
-        .settings-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 18px 24px;
-            cursor: pointer;
-            transition: background 0.2s ease;
-        }
-        
-        .settings-item:hover {
-            background: var(--bg-hover);
-        }
-        
-        .settings-divider {
-            height: 1px;
-            background: var(--border-color);
-            margin: 0 24px;
-        }
-        
-        .item-left {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-        }
-        
-        .item-icon {
-            font-size: 20px;
-        }
-        
-        .item-text {
-            font-size: 15px;
-            font-weight: 600;
-            color: var(--text-main);
-        }
-        
-        .btn-logout {
-            width: 100%;
-            padding: 18px;
-            background: transparent;
-            border: 1px solid var(--primary-accent);
-            border-radius: 16px;
-            color: var(--primary-accent);
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: 0.2s ease;
-            text-align: center;
-        }
-        
-        .btn-logout:hover {
-            background: rgba(230, 0, 43, 0.05);
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(230,0,43,0.08);
-        }
-        
-        .btn-logout:active {
-            transform: scale(0.98);
-        }
-        
-        /* Responsividade Específica para Configurações */
-        @media (max-width: 849px) {
-            .settings-panel {
-                order: 1;
-                width: 100%;
-                flex: 1;
-            }
-            .settings-header {
-                padding: 0 25px;
-            }
-        }
-        
-        /* Toast Notification */
-        #toast-aviso { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--primary-accent); color: white; padding: 12px 24px; border-radius: 30px; font-size: 14px; font-weight: 700; opacity: 0; visibility: hidden; transition: all 0.3s ease; z-index: 9999; box-shadow: 0 4px 15px rgba(230,0,43,0.4); white-space: nowrap; }
-        #toast-aviso.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--bg-main);
+    overflow-y: auto;
+}
+
+.settings-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    width: 100%;
+    min-height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: env(safe-area-inset-top) var(--space-4) 0;
+    background: var(--bg-main);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+.settings-header h1 {
+    width: 100%;
+    max-width: 568px; /* alinha com a coluna de 600px do conteúdo */
+    font-size: var(--fs-3xl);
+    font-weight: var(--fw-heavy);
+    letter-spacing: -.5px;
+    color: var(--text-main);
+}
+
+.settings-content {
+    width: 100%;
+    max-width: 600px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    padding: var(--space-6) var(--space-4) var(--space-10);
+    animation: config-entrar var(--dur-slower) var(--ease-standard);
+}
+@keyframes config-entrar {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+}
+
+/* Cartão de quem está logado */
+.settings-perfil {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3-5);
+    padding: var(--space-4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    background:
+        radial-gradient(ellipse 80% 120% at 0% 0%, rgba(var(--accent-rgb), .12), transparent 60%),
+        var(--bg-panel-2);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color var(--dur-fast) var(--ease-standard), transform var(--dur-instant) var(--ease-standard);
+}
+.settings-perfil:hover { border-color: var(--border-forte); }
+.settings-perfil:active { transform: scale(.99); }
+.settings-perfil-foto {
+    width: 60px;
+    height: 60px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid var(--bg-main);
+    box-shadow: 0 0 0 2px rgba(var(--accent-rgb), .55);
+    background: var(--bg-hover);
+}
+.settings-perfil-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-0-5);
+}
+.settings-perfil-info strong {
+    font-size: var(--fs-xl);
+    font-weight: var(--fw-bold);
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.settings-perfil-info strong .skeleton-texto { width: 8em; }
+.settings-perfil-info span {
+    font-size: var(--fs-md);
+    color: var(--text-sec);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Sair */
+.btn-logout {
+    width: 100%;
+    min-height: 54px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-5);
+    background: transparent;
+    border: 1px solid rgba(var(--accent-rgb), .55);
+    border-radius: var(--radius-lg);
+    color: var(--accent-text);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    text-align: center;
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), transform var(--dur-instant) var(--ease-standard);
+}
+.btn-logout:hover { background: rgba(var(--accent-rgb), 0.08); border-color: var(--primary-accent); }
+.btn-logout:active { transform: scale(0.98); }
+
+.settings-rodape {
+    margin-top: calc(var(--space-2) * -1);
+    text-align: center;
+    font-size: var(--fs-xs);
+    color: var(--text-ter);
+}
+
+@media (max-width: 849px) {
+    .settings-panel { order: 1; width: 100%; flex: 1; }
+    .settings-header { min-height: 64px; }
+    .settings-header h1 { font-size: var(--fs-2xl); }
+    .settings-content { padding-top: var(--space-5); }
+}
+@media (min-width: 850px) {
+    .settings-content { padding-top: var(--space-8); }
+}

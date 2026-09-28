@@ -3,82 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    
-<!-- CONECTANDO AO SEU CSS MESTRE -->
-    <link rel="stylesheet" href="style.css">
 
+    <link rel="stylesheet" href="style.css">
     <script src="tema.js"></script>
-<title>Perfil - Sinex Chat</title>
+    <title>Perfil - Sinex Chat</title>
     <link rel="manifest" href="manifest.json">
-    
-    <!-- ESTILOS EXCLUSIVOS DO PERFIL -->
+
     <link rel="stylesheet" href="perfil.css">
 </head>
 <body>
     <div class="app-layout">
-        
+
         <!-- NAVEGAÇÃO LATERAL (Idêntica em todas as telas) -->
-        <nav class="side-nav">
-            <a href="inbox.html" class="nav-item" title="Página Inicial">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.005 16.545a2.997 2.997 0 0 1 2.997-2.997A2.997 2.997 0 0 1 15 16.545V22h7V11.543L12 2 2 11.543V22h7v-5.455Z"></path></svg>
+        <nav class="side-nav" aria-label="Navegação principal">
+            <a href="inbox.html" class="nav-item nav-logo" title="Sinex Chat" aria-label="Sinex Chat: início"><span class="nav-logo-letra" aria-hidden="true">S</span></a>
+            <a href="inbox.html" class="nav-item" title="Mensagens" aria-label="Mensagens">
+                <span id="badgeGlobal" class="badge u-hidden" aria-hidden="true">0</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
             </a>
-            <a href="explorar.html" class="nav-item" title="Pesquisa">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg>
-            </a>
-            <a href="inbox.html" class="nav-item" title="Mensagens">
-                <div id="badgeGlobal" class="badge u-hidden">0</div>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
-            </a>
-            <!-- Botão ATIVO agora é o Meu Perfil -->
-            <a href="index.html" class="nav-item active" title="Perfil">
-                <img id="navAvatar" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Avatar">
-            </a>
-            <a href="configuracoes.html" class="nav-item nav-item-final" title="Mais">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="4" x2="21" y2="4"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="20" x2="21" y2="20"></line></svg>
-            </a>
+            <a href="explorar.html" class="nav-item" title="Pesquisar" aria-label="Pesquisar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg></a>
+            <a href="perfil.html" class="nav-item active" title="Perfil" aria-label="Seu perfil" aria-current="page"><img id="navAvatar" class="nav-avatar-icon" src="assets/avatar-padrao.svg" alt=""></a>
+            <a href="configuracoes.html" class="nav-item nav-item-final" title="Mais" aria-label="Configurações"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="5" x2="21" y2="5"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="19" x2="21" y2="19"></line></svg></a>
         </nav>
 
         <!-- COLUNA DO PERFIL -->
         <main class="profile-panel">
             <header class="profile-header-top">
                 <div class="header-left">
-                    <button id="btnVoltar" type="button" class="btn-back" aria-label="Voltar">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    <button id="btnVoltar" type="button" class="btn-back btn-icone u-hidden" aria-label="Voltar">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
                     </button>
-                    <strong id="headerUsername" class="texto-username-cabecalho">carregando...</strong>
+                    <strong id="headerUsername" class="texto-username-cabecalho"><span class="skeleton skeleton-texto"></span></strong>
                 </div>
-                <button id="btnAbrirMenu" type="button" aria-label="Mais opções" class="btn-menu-opcoes">⋮</button>
+                <button id="btnAbrirMenu" type="button" aria-label="Mais opções" aria-haspopup="menu" aria-expanded="false" aria-controls="menuHamburguer" class="btn-menu-opcoes btn-icone">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle></svg>
+                </button>
             </header>
 
-            <div class="profile-content">
-                <div class="profile-cover"></div>
+            <div id="conteudoPerfil" class="profile-content">
+                <div class="profile-cover" aria-hidden="true"></div>
                 <div class="profile-info-row">
-                    <img id="myProfilePic" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" class="profile-avatar">
-                    
+                    <img id="myProfilePic" src="assets/avatar-padrao.svg" class="profile-avatar" alt="">
+
                     <div class="profile-stats">
-                        <div class="stat-item" id="btnPosts" role="button" tabindex="0">
-                            <div id="myPostsCount" class="stat-value">0</div>
-                            <div class="stat-label">posts</div>
-                        </div>
-                        <div class="stat-item" id="btnAbrirSeguidores">
-                            <div id="myFollowersCount" class="stat-value">0</div>
-                            <div class="stat-label">seguidores</div>
-                        </div>
-                        <div class="stat-item" id="btnAbrirSeguindo">
-                            <div id="myFollowingCount" class="stat-value">0</div>
-                            <div class="stat-label">seguindo</div>
-                        </div>
+                        <button type="button" class="stat-item" id="btnAbrirSeguidores">
+                            <span id="myFollowersCount" class="stat-value"><span class="skeleton skeleton-texto"></span></span>
+                            <span id="rotuloSeguidores" class="stat-label">seguidores</span>
+                        </button>
+                        <button type="button" class="stat-item" id="btnAbrirSeguindo">
+                            <span id="myFollowingCount" class="stat-value"><span class="skeleton skeleton-texto"></span></span>
+                            <span class="stat-label">seguindo</span>
+                        </button>
                     </div>
                 </div>
 
                 <div class="profile-bio-box">
-                    <h2 id="myDisplayName" class="profile-name">Carregando...</h2>
-                    <p id="myBio" class="profile-bio">...</p>
+                    <div class="profile-nome-linha">
+                        <h1 id="myDisplayName" class="profile-name"><span class="skeleton skeleton-texto"></span></h1>
+                        <span id="seloSegueVoce" class="selo-segue-voce u-hidden">Segue você</span>
+                    </div>
+                    <p id="myBio" class="profile-bio"></p>
+                    <p id="perfilDesde" class="profile-desde u-hidden">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                        <span id="perfilDesdeTexto"></span>
+                    </p>
                 </div>
 
                 <div id="botoesOutroPerfil" class="profile-actions u-hidden">
-                    <button id="btnSeguirPerfil" class="btn-profile-action">Seguir</button>
-                    <button id="btnMensagemPerfil" class="btn-profile-action">Mensagem</button>
+                    <button id="btnSeguirPerfil" type="button" class="btn-profile-action" aria-pressed="false">Seguir</button>
+                    <button id="btnMensagemPerfil" type="button" class="btn-profile-action">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
+                        Mensagem
+                    </button>
                 </div>
 
                 <div id="botoesMeuPerfil" class="profile-actions u-hidden">
@@ -86,35 +82,49 @@
                     <button id="btnCompartilharPerfil" type="button" class="btn-profile-action">Compartilhar perfil</button>
                 </div>
             </div>
+
+            <!-- Conta inexistente ou erro de carga (preenchido pelo perfil.js) -->
+            <div id="perfilEstado" class="u-hidden" role="status"></div>
         </main>
     </div>
 
-    <!-- MODAIS E MENUS FLUTUANTES -->
-    <div id="overlayHamburguer"></div>
-    <div id="menuHamburguer">
-        <div class="menu-hamburguer-alca"></div>
-        <div id="btnCopiarLink" role="button" tabindex="0" class="menu-hamburguer-item">🔗 Copiar link do perfil</div>
-        <div id="btnBloquear" role="button" tabindex="0" class="menu-hamburguer-item-perigo">🚫 Bloquear conta</div>
-        <div id="btnDenunciar" role="button" tabindex="0" class="menu-hamburguer-item-perigo">🚩 Denunciar</div>
+    <!-- MENU "MAIS OPÇÕES": folha de baixo no celular, lista suspensa no computador -->
+    <div id="overlayHamburguer" class="perfil-menu-fundo" aria-hidden="true"></div>
+    <div id="menuHamburguer" class="perfil-menu" role="menu" aria-label="Opções do perfil" aria-hidden="true">
+        <div class="menu-hamburguer-alca" aria-hidden="true"></div>
+        <button id="btnCompartilharMenu" type="button" role="menuitem" class="menu-item" tabindex="-1">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" y1="2" x2="12" y2="15"></line></svg>
+            Compartilhar perfil
+        </button>
+        <button id="btnCopiarLink" type="button" role="menuitem" class="menu-item" tabindex="-1">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+            Copiar link do perfil
+        </button>
+        <a id="btnMenuConfiguracoes" href="configuracoes.html" role="menuitem" class="menu-item u-hidden" tabindex="-1">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"></path></svg>
+            Configurações
+        </a>
+        <button type="button" class="menu-item menu-item-cancelar" data-fechar-menu tabindex="-1">Cancelar</button>
     </div>
 
-    <div id="modalListaUsuarios">
+    <!-- SEGUIDORES / SEGUINDO -->
+    <div id="modalListaUsuarios" class="modal-lista" role="dialog" aria-modal="true" aria-labelledby="modalListaTitulo" aria-hidden="true">
         <div class="modal-box">
             <div class="modal-header">
-                <h3 id="modalListaTitulo" class="modal-lista-titulo">Lista</h3>
-                <button id="btnFecharModalLista" class="modal-close-btn">×</button>
+                <h2 id="modalListaTitulo" class="modal-lista-titulo">Lista</h2>
+                <button id="btnFecharModalLista" type="button" class="modal-close-btn btn-icone" aria-label="Fechar">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
             </div>
-            <div id="modalListaConteudo" class="modal-lista-conteudo">
-                <span class="modal-msg">Buscando...</span>
+            <div class="modal-abas" role="tablist" aria-label="Conexões">
+                <button id="tabSeguidores" type="button" class="modal-aba ativa" role="tab" aria-selected="true" aria-controls="modalListaConteudo">Seguidores</button>
+                <button id="tabSeguindo" type="button" class="modal-aba" role="tab" aria-selected="false" aria-controls="modalListaConteudo" tabindex="-1">Seguindo</button>
             </div>
+            <div id="modalListaConteudo" class="modal-lista-conteudo" role="tabpanel" aria-labelledby="tabSeguidores"></div>
         </div>
     </div>
 
-    <!-- SCRIPT INLINE DE INTERFACE E MODAIS -->
-<!-- Scripts Externos Originais -->
     <script type="module" src="radar.js"></script>
-    
-    <!-- Aqui carrega os dados reais do Perfil (bio, botão de seguir, etc) que você já tem no seu perfil.js -->
     <script type="module" src="perfil.js"></script>
 </body>
 </html>

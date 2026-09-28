@@ -1,93 +1,195 @@
 rules_version = '2';
 
 // Regras de segurança do Sinex Chat.
-// Premissa: todo o acesso ao banco vem direto do navegador. Portanto estas
-// regras — e não o código JavaScript — são a única barreira real. Nada aqui
-// deve depender de checagens feitas no cliente.
+//
+// Todo o acesso ao banco vem direto do navegador; estas regras — e não o
+// JavaScript — são a barreira real. Nada aqui pode depender de checagem feita
+// no cliente.
+//
+// Esta versão junta as regras publicadas em 17/09/2026 com as do repositório e
+// corrige estes problemas:
+//   1. Editar o perfil falhava para quem não tinha o campo "status" (a regra
+//      publicada comparava resource.data.status, e ler campo inexistente é
+//      erro — erro nas regras é recusa).
+//   2. Qualquer pessoa podia criar a conversa "ana_bruno" antes dos dois,
+//      incluindo o próprio uid, e ler tudo o que eles conversassem depois.
+//      Agora a conversa direta só nasce com os uids das duas pessoas do ID.
+//   3. Qualquer participante podia reescrever qualquer campo da conversa e
+//      das mensagens (inclusive o texto de mensagens dos outros), mandar
+//      mensagem com o @ de outra pessoa e criar "seguir" em nome de outra
+//      conta. Agora cada um só mexe no que é seu.
+//   4. A coleção "chamadas" estava aberta a leitura e escrita de qualquer
+//      pessoa logada, sem que nada no app a usasse.
+//
+// O backend Go usa o Admin SDK, que não passa por estas regras (lastSeen,
+// uid e status de contas antigas são gravados por ele).
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     function autenticado() {
       return request.auth != null;
     }
-    
+
+    // Custom claim "admin", gravada por cmd/setadmin.
     function ehAdmin() {
       return autenticado() && request.auth.token.admin == true;
     }
-    
+
     function meuUID() {
       return request.auth.uid;
     }
-    
-    // Campos que o dono do perfil pode alterar. status e role ficam de fora
-    // de propósito: quem muda isso é um admin.
-    function camposDePerfilPermitidos() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['nome', 'bio', 'foto', 'lastSeen', 'uid']);
+
+    // Campos que mudaram nesta escrita (só o primeiro nível).
+    function mudou() {
+      return request.resource.data.diff(resource.data).affectedKeys();
     }
 
+    function perfil(nome) {
+      return /databases/$(database)/documents/usuarios/$(nome);
+    }
+
+    // O @ informado é de quem está escrevendo. Perfis antigos cujo ID de
+    // documento não é o próprio @ não têm como ser conferidos aqui; para não
+    // travar essas contas, um @ sem documento passa.
+    function ehMeuNome(nome) {
+      return nome is string && nome.size() > 0
+        && (!exists(perfil(nome)) || get(perfil(nome)).data.get('uid', null) == meuUID());
+    }
+
+    // ==========================================================
+    // 1. PERFIS
+    // ==========================================================
     match /usuarios/{username} {
-      // O perfil é público para quem está logado (busca, lista de contatos).
+      // Público para quem está logado (busca, lista de contatos, perfil).
       allow read: if autenticado();
-      
-      // No cadastro: o documento precisa pertencer a quem está criando,
-      // o ID do documento tem que bater com o campo usuario, e ninguém
-      // se cria admin.
+
+      // Cadastro: o documento é de quem cria, o ID é o nome de usuário, o
+      // e-mail é o do token e ninguém nasce admin, banido ou com status.
       allow create: if autenticado()
         && request.resource.data.uid == meuUID()
         && request.resource.data.usuario == username
         && username.matches('^[a-z0-9._-]{3,30}$')
-        && !request.resource.data.keys().hasAny(['role', 'status', 'banido']);
-        
-      // O dono edita só os campos dele; o admin pode moderar qualquer conta.
+        && request.resource.data.get('email', '') == request.auth.token.get('email', '')
+        && !request.resource.data.keys().hasAny(['role', 'status', 'banido', 'admin']);
+
+      function textoAte(campo, maximo) {
+        return !(campo in mudou())
+          || (request.resource.data[campo] is string && request.resource.data[campo].size() <= maximo);
+      }
+
+      // O dono edita nome, bio e foto (lastSeen continua liberado para
+      // versões antigas do app ainda em cache). uid, e-mail, usuario e
+      // status ficam travados; o admin modera qualquer conta.
+      // Dono: pelo uid; em conta antiga ainda sem uid (o backend grava na
+      // primeira conexão, que demora se o servidor estiver dormindo), pelo
+      // e-mail do token.
+      function souODono() {
+        return resource.data.get('uid', null) == meuUID()
+          || (resource.data.get('uid', null) == null
+            && resource.data.get('email', '') != ''
+            && resource.data.get('email', '') == request.auth.token.get('email', ''));
+      }
+
       allow update: if ehAdmin()
-        || (autenticado() && resource.data.uid == meuUID() && camposDePerfilPermitidos());
-        
-      // Ninguém apaga perfil pelo cliente.
-      allow delete: if false;
+        || (autenticado()
+          && souODono()
+          && mudou().hasOnly(['nome', 'bio', 'foto', 'lastSeen'])
+          && textoAte('nome', 60)
+          && (!('nome' in mudou()) || request.resource.data.nome.size() > 0)
+          && textoAte('bio', 200)
+          && textoAte('foto', 2048));
+
+      allow delete: if ehAdmin();
     }
 
-    // Arestas de "quem segue quem". O ID do documento é
-    // "{seguidor}_{seguindo}", o que impede seguir a mesma pessoa duas vezes.
-    // Cada aresta só pode ser criada ou removida por quem segue.
+    // ==========================================================
+    // 2. SEGUIDORES — ID "{seguidor}_{seguindo}", sem duplicar
+    // ==========================================================
     match /seguidores/{arestaId} {
       allow read: if autenticado();
+
       allow create: if autenticado()
         && request.resource.data.seguidorUid == meuUID()
         && arestaId == request.resource.data.seguidor + '_' + request.resource.data.seguindo
-        && request.resource.data.seguidor != request.resource.data.seguindo;
+        && request.resource.data.seguidor != request.resource.data.seguindo
+        && ehMeuNome(request.resource.data.seguidor);
+
       allow delete: if autenticado() && resource.data.seguidorUid == meuUID();
-      
+
       // Uma aresta não se edita: cria ou apaga.
       allow update: if false;
     }
 
+    // ==========================================================
+    // 3. CONVERSAS E MENSAGENS
+    // ==========================================================
     match /chats/{chatId} {
       function souParticipante() {
         return autenticado() && meuUID() in resource.data.uids;
       }
-      
-      function viraiParticipante() {
-        return autenticado()
-          && meuUID() in request.resource.data.uids
-          && request.resource.data.uids.size() >= 2
-          && request.resource.data.uids.size() <= 20
-          && request.resource.data.usuarios.size() == request.resource.data.uids.size();
+
+      // Conversa direta: exatamente as duas pessoas do ID ("a_b", os dois @
+      // em ordem) e os uids são os DELAS, conferidos no perfil. Sem isto,
+      // alguém podia criar "ana_bruno" antes deles, com o próprio uid junto,
+      // e ler tudo o que os dois conversassem depois.
+      function diretoHonesto() {
+        let d = request.resource.data;
+        return d.uids.size() == 2
+          && d.usuarios.size() == 2
+          && d.usuarios[0] < d.usuarios[1]
+          && chatId == d.usuarios[0] + '_' + d.usuarios[1]
+          && get(perfil(d.usuarios[0])).data.get('uid', null) in d.uids
+          && get(perfil(d.usuarios[1])).data.get('uid', null) in d.uids;
       }
 
-      // CORREÇÃO AQUI: Dividimos o read em get (documento único) e list (queries).
-      // Permitimos o `get` se o documento for null. Isso retorna um NotFound
-      // (ao invés de Permission Denied) para o `getDoc` no momento em que você
-      // chama a função garantirChat() para uma conversa que ainda não foi criada.
-      allow get: if resource == null || souParticipante();
-      allow list: if souParticipante();
-      
-      allow create: if viraiParticipante();
-      
-      // A lista de participantes é imutável depois de criada.
+      // Grupo: ID aleatório do Firestore (nunca um "a_b" de conversa direta),
+      // de 3 a 20 pessoas.
+      function grupoHonesto() {
+        let d = request.resource.data;
+        return chatId.matches('^[A-Za-z0-9]{20}$')
+          && d.uids.size() >= 3
+          && d.uids.size() <= 20
+          && d.usuarios.size() == d.uids.size();
+      }
+
+      // O resumo da última mensagem só muda junto com uma mensagem de
+      // verdade: hora do servidor e remetente = quem escreve.
+      function resumoHonesto() {
+        return !mudou().hasAny(['ultimaMensagem', 'ultimoRemetente', 'ultimoTipo', 'timestamp'])
+          || (request.resource.data.timestamp == request.time
+            && ehMeuNome(request.resource.data.get('ultimoRemetente', '')));
+      }
+
+      // Em entregas/leituras cada pessoa só grava a própria marca.
+      function soAMinhaMarca(campo) {
+        return !(campo in mudou())
+          || (request.resource.data.get(campo, {}).diff(resource.data.get(campo, {})).affectedKeys().hasOnly([meuUID()])
+            && request.resource.data[campo][meuUID()] is timestamp);
+      }
+
+      // Só quem participa lê. Uma conversa que ainda não existe também é
+      // "sem permissão" — de propósito: devolver "não existe" deixaria
+      // qualquer um descobrir se duas outras pessoas conversam (o ID é feito
+      // dos dois @). O garantirChat do app já trata essa recusa como "ainda
+      // não existe" e cria a conversa. O admin lê para o contador do painel.
+      allow get, list: if souParticipante() || ehAdmin();
+
+      allow create: if autenticado()
+        && meuUID() in request.resource.data.uids
+        && ((request.resource.data.get('tipo', 'direto') == 'grupo' && grupoHonesto())
+          || (request.resource.data.get('tipo', 'direto') != 'grupo' && diretoHonesto()));
+
+      // Participantes e membros não mudam depois de criados; o resto é o
+      // resumo da última mensagem e as marcas de entrega/leitura.
       allow update: if souParticipante()
-        && request.resource.data.uids == resource.data.uids;
+        && request.resource.data.uids == resource.data.uids
+        && request.resource.data.get('usuarios', []) == resource.data.get('usuarios', [])
+        && mudou().hasOnly(['ultimaMensagem', 'ultimoRemetente', 'ultimoTipo', 'timestamp', 'entregas', 'leituras'])
+        && resumoHonesto()
+        && soAMinhaMarca('entregas')
+        && soAMinhaMarca('leituras');
+
       allow delete: if souParticipante();
 
       match /mensagens/{mensagemId} {
@@ -95,32 +197,35 @@ service cloud.firestore {
           return autenticado()
             && meuUID() in get(/databases/$(database)/documents/chats/$(chatId)).data.uids;
         }
-        
+
         allow read: if participanteDoChat();
-        
-        // CORREÇÃO AQUI: `is timestamp` previne bugs do `request.time`
-        // caso o SDK gere um timestamp simulado no cache local antes da rede voltar.
+
+        // Ninguém manda mensagem em nome de outra pessoa (nem o uid nem o @
+        // exibido no grupo), e a hora é a do servidor (serverTimestamp), não
+        // a do aparelho — senão dava para "fixar" mensagem no fim da conversa.
         allow create: if participanteDoChat()
           && request.resource.data.remetenteUid == meuUID()
-          && request.resource.data.timestamp is timestamp;
-          
-        // Mensagem enviada não se reescreve.
-        allow update: if false;
+          && ehMeuNome(request.resource.data.get('remetente', ''))
+          && request.resource.data.timestamp == request.time;
 
-        // Apagar fica com qualquer participante da conversa, e não só com o
-        // remetente. A regra anterior tornava impossível apagar uma conversa:
-        // apagarChat() remove as mensagens em lotes (writeBatch), o lote é
-        // tudo-ou-nada, e bastava UMA mensagem da outra pessoa para o lote
-        // inteiro ser recusado — a conversa nunca era apagada de verdade e a
-        // tela só mostrava "não foi possível apagar".
-        //
-        // É também o que a confirmação na tela promete: "as mensagens serão
-        // excluídas para todos os participantes".
+        // Mensagem enviada não se reescreve; o único campo que muda é a
+        // reação — e cada um só mexe na própria.
+        allow update: if participanteDoChat()
+          && mudou().hasOnly(['reacoes'])
+          && request.resource.data.get('reacoes', {}).diff(resource.data.get('reacoes', {})).affectedKeys().hasOnly([meuUID()]);
+
+        // Qualquer participante apaga: "apagar conversa" remove as mensagens
+        // em lotes, e um lote é tudo-ou-nada — se só o remetente pudesse
+        // apagar, bastava uma mensagem da outra pessoa para nada ser apagado.
         allow delete: if participanteDoChat();
       }
     }
 
-    // Qualquer coleção declarada acima é negada por padrão
+    // A coleção "chamadas" das regras publicadas saiu: a sinalização de
+    // chamada é só pelo WebSocket, nada no app grava ali — e ela estava
+    // aberta para leitura e escrita de qualquer pessoa logada.
+
+    // Qualquer coisa não declarada acima é negada.
     match /{document=**} {
       allow read, write: if false;
     }

@@ -1,7 +1,7 @@
 import { db, storage } from "./firebase.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import Core, { sessao, definirAvatar, atualizarPerfilEmCache } from "./core.js";
+import Core, { sessao, definirAvatar, atualizarPerfilEmCache, mostrar, AVATAR_PADRAO } from "./core.js";
 
 const TAMANHO_MAXIMO = 400; // lado maior da imagem final
 const LIMITE_ARQUIVO = 10 * 1024 * 1024;
@@ -10,10 +10,14 @@ const elPreview = document.getElementById("previewImg");
 const elArquivo = document.getElementById("fileInput");
 const btnSalvar = document.getElementById("btnSalvar");
 const btnEscolher = document.getElementById("btnEscolher");
+const btnRemover = document.getElementById("btnRemoverFoto");
+const areaFoto = document.getElementById("areaFoto");
+const textoEscolher = document.getElementById("textoEscolher");
 
 let sessaoAtual = null;
 let blobFinal = null;
 let previewObjectURL = null;
+let ocupado = false;
 
 /** Redimensiona no navegador para não subir uma foto de 8 MP como avatar. */
 function redimensionar(arquivo) {
@@ -55,16 +59,15 @@ function redimensionar(arquivo) {
   });
 }
 
-async function prepararFoto(evento) {
-  const arquivo = evento.target.files?.[0];
-  if (!arquivo) return;
+async function prepararArquivo(arquivo) {
+  if (!arquivo || ocupado) return;
 
   if (!arquivo.type.startsWith("image/")) {
-    Core.aviso("Escolha um arquivo de imagem.", "#ed4956");
+    Core.aviso("Escolha um arquivo de imagem.", "erro");
     return;
   }
   if (arquivo.size > LIMITE_ARQUIVO) {
-    Core.aviso("A imagem precisa ter no máximo 10 MB.", "#ed4956");
+    Core.aviso("A imagem precisa ter no máximo 10 MB.", "erro");
     return;
   }
 
@@ -77,18 +80,39 @@ async function prepararFoto(evento) {
     previewObjectURL = URL.createObjectURL(blobFinal);
 
     elPreview.src = previewObjectURL;
-    btnSalvar.style.display = "flex";
+    mostrar(btnSalvar, true);
+    mostrar(btnRemover, false);
+    if (textoEscolher) textoEscolher.textContent = "Escolher outra";
+    btnSalvar.focus({ preventScroll: true });
   } catch (erro) {
     console.error("Erro ao preparar a foto:", erro);
-    Core.aviso(erro.message, "#ed4956");
+    Core.aviso(erro.message, "erro");
   }
 }
 
-async function salvarFoto() {
-  if (!blobFinal) return;
+function prepararFoto(evento) {
+  prepararArquivo(evento.target.files?.[0]);
+  // Permite escolher o mesmo arquivo de novo depois de trocar de ideia.
+  evento.target.value = "";
+}
 
-  btnSalvar.textContent = "Enviando...";
-  btnSalvar.disabled = true;
+function voltar() {
+  if (document.referrer && !document.referrer.includes("foto.html") && window.history.length > 1) window.history.back();
+  else window.location.href = "perfil.html";
+}
+
+function travar(travado, texto) {
+  ocupado = travado;
+  btnSalvar.disabled = travado;
+  btnEscolher.disabled = travado;
+  if (btnRemover) btnRemover.disabled = travado;
+  areaFoto?.classList.toggle("enviando", travado);
+  if (texto) btnSalvar.textContent = texto;
+}
+
+async function salvarFoto() {
+  if (!blobFinal || ocupado) return;
+  travar(true, "Enviando...");
 
   try {
     // O uid está no caminho: é assim que as regras do Storage sabem que o
@@ -106,32 +130,85 @@ async function salvarFoto() {
     // Atualiza também o perfil já carregado nesta aba: sem isso, voltar para
     // o perfil sem recarregar continuava mostrando a foto antiga.
     atualizarPerfilEmCache({ foto: url });
-    Core.aviso("Foto atualizada com sucesso!", "#00a884");
-
-    setTimeout(() => {
-      if (document.referrer && !document.referrer.includes("foto.html")) window.history.back();
-      else window.location.href = "perfil.html";
-    }, 900);
+    Core.aviso("Foto atualizada.", "sucesso");
+    setTimeout(voltar, 900);
   } catch (erro) {
     console.error("Erro ao salvar foto:", erro);
-    Core.aviso("Erro ao enviar a foto. Tente novamente.", "#ed4956");
-    btnSalvar.textContent = "Salvar Nova Foto";
-    btnSalvar.disabled = false;
+    Core.aviso("Erro ao enviar a foto. Tente novamente.", "erro");
+    travar(false, "Salvar nova foto");
   }
+}
+
+async function removerFoto() {
+  if (ocupado) return;
+  const ok = await Core.confirmar("Seu perfil volta a mostrar o avatar padrão.", {
+    titulo: "Remover foto?",
+    confirmarTexto: "Remover",
+  });
+  if (!ok) return;
+
+  travar(true);
+  try {
+    await updateDoc(doc(db, "usuarios", sessaoAtual.perfil.id), { foto: "" });
+    atualizarPerfilEmCache({ foto: "" });
+    try { localStorage.removeItem("foto"); } catch (_) {}
+    elPreview.src = AVATAR_PADRAO;
+    mostrar(btnRemover, false);
+    Core.aviso("Foto removida.", "sucesso");
+  } catch (erro) {
+    console.error("Erro ao remover a foto:", erro);
+    Core.aviso("Não foi possível remover a foto.", "erro");
+  } finally {
+    travar(false);
+  }
+}
+
+// Arrastar e soltar (computador)
+function configurarArrastar() {
+  if (!areaFoto) return;
+  let profundidade = 0;
+  const temArquivo = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+
+  areaFoto.addEventListener("dragenter", (e) => {
+    if (!temArquivo(e)) return;
+    e.preventDefault();
+    profundidade++;
+    areaFoto.classList.add("arrastando");
+  });
+  areaFoto.addEventListener("dragover", (e) => {
+    if (!temArquivo(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+  areaFoto.addEventListener("dragleave", () => {
+    profundidade = Math.max(0, profundidade - 1);
+    if (!profundidade) areaFoto.classList.remove("arrastando");
+  });
+  areaFoto.addEventListener("drop", (e) => {
+    e.preventDefault();
+    profundidade = 0;
+    areaFoto.classList.remove("arrastando");
+    prepararArquivo(e.dataTransfer?.files?.[0]);
+  });
+
+  // Solto fora do círculo: não deixa o navegador abrir a imagem no lugar do app.
+  window.addEventListener("dragover", (e) => { if (temArquivo(e)) e.preventDefault(); });
+  window.addEventListener("drop", (e) => { if (temArquivo(e)) e.preventDefault(); });
 }
 
 async function iniciar() {
   sessaoAtual = await sessao();
   if (sessaoAtual.perfil.foto) definirAvatar(elPreview, sessaoAtual.perfil.foto);
+  mostrar(btnRemover, !!sessaoAtual.perfil.foto && sessaoAtual.perfil.foto !== AVATAR_PADRAO);
 
   elArquivo.addEventListener("change", prepararFoto);
   btnEscolher?.addEventListener("click", () => elArquivo.click());
+  areaFoto?.addEventListener("click", () => { if (!ocupado) elArquivo.click(); });
   btnSalvar.addEventListener("click", salvarFoto);
+  btnRemover?.addEventListener("click", removerFoto);
+  configurarArrastar();
 
-  document.querySelector('[data-acao="voltar"]')?.addEventListener("click", () => {
-    if (document.referrer) window.history.back();
-    else window.location.href = "perfil.html";
-  });
+  document.querySelector('[data-acao="voltar"]')?.addEventListener("click", voltar);
 }
 
 iniciar();

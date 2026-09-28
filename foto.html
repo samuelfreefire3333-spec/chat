@@ -1,54 +1,55 @@
-<!DOCTYPE html> 
-<html lang="pt-BR" data-exige-login="sim"> 
-<head>     
-    <meta charset="UTF-8">     
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">          
-    
-<!-- 👑 CONECTANDO AO SEU CSS MESTRE -->
+<!DOCTYPE html>
+<html lang="pt-BR" data-exige-login="sim">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
     <link rel="stylesheet" href="style.css">
-
     <script src="tema.js"></script>
-<title>Mudar Foto - Sinex Chat</title>
-    <link rel="manifest" href="manifest.json">          
-    
-    <!-- ESTILOS EXCLUSIVOS DA TELA DE FOTO -->
-    <link rel="stylesheet" href="foto.css">
- 
-</head> 
-<body>     
-    <div class="app-layout">                  
-        <main class="photo-panel">             
-            <header class="photo-header">                 
-                <button class="btn-back" type="button" data-acao="voltar" aria-label="Voltar">                     
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>                 
-                </button>                 
-                <strong class="titulo-cabecalho foto-titulo-recuo">Foto de Perfil</strong>             
-            </header>             
-            
-            <div class="photo-container">                 
-                <div class="photo-preview-box">                     
-                    <img id="previewImg" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Preview">                 
-                </div>                 
-                
-                <h2 class="foto-titulo">Atualizar Foto</h2>                 
-                <p class="foto-subtitulo">Escolha uma nova imagem para destacar o seu perfil no chat.</p>                 
-                
-                <input type="file" id="fileInput" accept="image/*">                 
-                
-                <button id="btnEscolher" class="btn-action btn-secondary" type="button">                     
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>                     
-                    Escolher da Galeria                 
-                </button>                 
-                
-                <button id="btnSalvar" class="btn-action btn-primary u-hidden" type="button">                     
-                    Salvar Nova Foto                 
-                </button>             
-            </div>         
-        </main>     
-    </div>     
-    
-    <div id="toast-aviso">Alerta!</div>     
+    <title>Mudar Foto - Sinex Chat</title>
+    <link rel="manifest" href="manifest.json">
 
+    <link rel="stylesheet" href="foto.css">
+</head>
+<body>
+    <div class="app-layout">
+        <main class="photo-panel">
+            <header class="photo-header cabecalho-pagina">
+                <button class="btn-back" type="button" data-acao="voltar" aria-label="Voltar">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                </button>
+                <h1 class="titulo-cabecalho foto-titulo-recuo">Foto do perfil</h1>
+            </header>
+
+            <div class="photo-container">
+                <!-- Clique ou arraste uma imagem para cá -->
+                <button id="areaFoto" type="button" class="photo-preview-box" aria-label="Escolher uma nova foto" aria-describedby="dicaFoto">
+                    <img id="previewImg" src="assets/avatar-padrao.svg" alt="">
+                    <span class="photo-preview-camera" aria-hidden="true">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    </span>
+                </button>
+
+                <h2 class="foto-titulo">Atualizar foto</h2>
+                <p id="dicaFoto" class="foto-subtitulo">Escolha uma imagem para destacar seu perfil. <span class="so-computador">Você também pode arrastar o arquivo para o círculo.</span></p>
+
+                <input type="file" id="fileInput" accept="image/*">
+
+                <button id="btnEscolher" class="btn-action btn-secondary" type="button">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    <span id="textoEscolher">Escolher da galeria</span>
+                </button>
+
+                <button id="btnSalvar" class="btn-action btn-primary u-hidden" type="button">
+                    Salvar nova foto
+                </button>
+
+                <button id="btnRemoverFoto" class="btn-link-perigo u-hidden" type="button">Remover foto atual</button>
+            </div>
+        </main>
+    </div>
+
+    <script type="module" src="radar.js"></script>
     <script type="module" src="foto.js"></script>
-</body> 
+</body>
 </html>

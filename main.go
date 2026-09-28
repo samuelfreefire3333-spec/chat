@@ -8,13 +8,18 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 var origensPadrao = []string{
+	// Onde o app está publicado hoje. Antes dependia só da variável
+	// ALLOWED_ORIGINS no Render: se ela sumisse, ninguém mais conectava.
+	"https://sinexchat.netlify.app",
 	"https://chat-parameuamor.firebaseapp.com",
 	"https://chat-parameuamor.web.app",
 	"http://localhost:8080",
@@ -96,12 +101,16 @@ func (s *servidor) serveWs(w http.ResponseWriter, r *http.Request) {
 		Send:         make(chan Message, 256),
 		hub:          s.hub,
 		janelaInicio: time.Now(),
+		conectadoEm:  time.Now(),
 	}
 
-	s.hub.Register <- client
+	// Confirma para o cliente qual identidade o servidor reconheceu e o que
+	// este servidor sabe fazer. Vai para o buffer ANTES do registro: assim o
+	// auth_ok é sempre o primeiro quadro, mesmo que um aviso de presença de
+	// outra pessoa chegue no mesmo instante.
+	client.Send <- Message{Type: "auth_ok", To: ident.Username, Content: ident.Username, Payload: recursosDoServidor}
 
-	// Confirma para o cliente qual identidade o servidor reconheceu.
-	client.Send <- Message{Type: "auth_ok", To: ident.Username, Content: ident.Username}
+	s.hub.Register <- client
 
 	go client.writePump()
 	go client.readPump()
@@ -242,8 +251,25 @@ func main() {
 		ReadHeaderTimeout: 15 * time.Second,
 	}
 
+	// Desligamento limpo: o Render manda SIGTERM a cada deploy e quando o
+	// plano gratuito adormece. Paramos de aceitar conexões, gravamos o
+	// lastSeen de quem estava online e só então saímos.
+	sinal, pararSinal := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer pararSinal()
+	encerrado := make(chan struct{})
+	go func() {
+		<-sinal.Done()
+		log.Printf("Desligando: gravando presença e fechando conexões...")
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		srv.Shutdown(ctx)
+		hub.Encerrar(10 * time.Second)
+		close(encerrado)
+	}()
+
 	log.Printf("Servidor WebSocket do Sinex Chat iniciado na porta %s", port)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal("Erro fatal no servidor: ", err)
 	}
+	<-encerrado
 }

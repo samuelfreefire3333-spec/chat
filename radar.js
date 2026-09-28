@@ -1,6 +1,9 @@
 import Core, { sessao, urlSegura, AVATAR_PADRAO, buscarPerfilPorUsername } from "./core.js";
-import { registrarEventoDeChamada } from "./mensagens.js";
-import { abrirJanelaDeChamada, ligarBarraDeChamada } from "./chamada-flutuante.js";
+import { registrarEventoDeChamada, marcarEntregueDoAviso } from "./mensagens.js";
+import {
+  abrirJanelaDeChamada, ligarBarraDeChamada, lerEstadoDaChamada,
+  avisarJanelas, focarJanelaDaChamada,
+} from "./chamada-flutuante.js";
 
 const URL_BACKEND = "wss://sinex-backend-go.onrender.com/ws";
 
@@ -8,19 +11,24 @@ const URL_BACKEND = "wss://sinex-backend-go.onrender.com/ws";
 // administrativos do backend (hoje só /admin/kick, ver admin.js).
 export const URL_BACKEND_HTTP = "https://sinex-backend-go.onrender.com";
 
-const DURACAO_CHAMADA = 30000; // tempo para atender antes de virar perdida
+// Quanto tempo o balão de chamada recebida fica na tela. Quem liga desiste em
+// 45 s e avisa; isto é só a rede de segurança para um aviso que se perdeu.
+const DURACAO_CHAMADA = 50000;
 const BACKOFF_MIN = 1000;
 const BACKOFF_MAX = 30000;
+
+// Batimento: sem ele, um socket morto (troca de Wi-Fi para 4G, celular que
+// dormiu) continuava "aberto" para o navegador por minutos — e a presença,
+// o "digitando" e as chamadas simplesmente paravam de chegar.
+const INTERVALO_PING = 25000;
+const LIMITE_SEM_RESPOSTA = 10000;
 
 // ==========================================================================
 // CONEXÃO
 // ==========================================================================
-// Diferenças em relação à versão anterior:
 //  - o token vai numa mensagem "auth" depois do handshake, não na query string
 //    (a URL aparece nos logs do servidor e em proxies);
-//  - onAuthStateChanged é registrado UMA vez, no módulo. Antes era registrado a
-//    cada tentativa de reconexão e nunca desinscrito, o que acumulava callbacks
-//    e abria vários WebSockets em paralelo;
+//  - onAuthStateChanged é resolvido UMA vez (core.js), não a cada reconexão;
 //  - a reconexão usa backoff exponencial com jitter, em vez de bater de 3 em 3
 //    segundos para sempre enquanto o servidor gratuito acorda.
 
@@ -34,28 +42,40 @@ const TIPOS_EFEMEROS = new Set([
   "digitando",
   "parou_digitando",
   "status_check",
-  "webrtc",
-  "chamada",
-  "cancelar_chamada",
+  "status_lote",
+  "ping",
 ]);
+
+// Sinalização de chamada tem vida curta: vale esperar a conexão por alguns
+// segundos — a janela da chamada abre um socket novo, e a oferta WebRTC e os
+// candidatos saíam antes de ele autenticar e se perdiam —, mas nunca
+// reentregar algo velho.
+const TIPOS_DE_VIDA_CURTA = new Set(["webrtc", "chamada", "cancelar_chamada"]);
+const VIDA_CURTA_MS = 10000;
 
 const Radar = {
   estado: "desconectado", // desconectado | conectando | conectado
   socket: null,
   fila: [],
+  /** O que o servidor anunciou no auth_ok (ver hub.go, recursosDoServidor). */
+  recursos: new Set(),
 
   emit(dados) {
     if (this.estado === "conectado" && this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(dados));
-      return;
+      return true;
     }
 
     // Só o que ainda vale a pena entregar mais tarde entra na fila (máximo de
     // 100 itens, para não crescer sem limite offline).
     if (!TIPOS_EFEMEROS.has(dados.type) && this.fila.length < 100) {
-      this.fila.push(dados);
+      const item = TIPOS_DE_VIDA_CURTA.has(dados.type)
+        ? { dados, expiraEm: Date.now() + VIDA_CURTA_MS }
+        : { dados, expiraEm: 0 };
+      this.fila.push(item);
     }
     agendarReconexao();
+    return false;
   },
 
   /** Pergunta ao servidor se alguém está online. */
@@ -64,8 +84,31 @@ const Radar = {
     this.emit({ type: "status_check", to: username });
   },
 
+  /**
+   * Presença de várias pessoas. Com servidor novo vai num quadro só; com o
+   * antigo, em pedidos individuais espaçados — a caixa de entrada chegava a
+   * mandar 200 pedidos em um segundo e estourava o limite de taxa da
+   * conexão, que o servidor derruba.
+   */
+  verificarStatusLote(usernames) {
+    const lista = [...new Set((usernames || []).filter(Boolean))];
+    if (!lista.length) return;
+    // Antes do auth_ok ainda não se sabe o que o servidor aceita, e o pedido
+    // se perderia de qualquer jeito (presença não entra na fila). Quem chama
+    // pede de novo no evento "radar_conectado". Sem esta saída, pedidos
+    // avulsos agendados aqui escapavam logo depois da conexão e duplicavam o
+    // pedido em lote.
+    if (this.estado !== "conectado") return;
+    if (this.recursos.has("status-lote")) {
+      this.emit({ type: "status_lote", payload: lista });
+      return;
+    }
+    lista.forEach((u, i) => setTimeout(() => this.verificarStatus(u), Math.floor(i / 20) * 1000));
+  },
+
   encerrar() {
     pararReconexao();
+    pararBatimento();
     encerradoDeProposito = true;
     if (this.socket) {
       this.socket.onclose = null;
@@ -84,6 +127,10 @@ let tentativas = 0;
 let timerReconexao = null;
 let conectando = false;
 let encerradoDeProposito = false;
+
+let timerBatimento = null;
+let ultimaAtividade = 0;
+let pingPendenteDesde = 0;
 
 function pararReconexao() {
   clearTimeout(timerReconexao);
@@ -106,16 +153,47 @@ function agendarReconexao() {
   }, espera);
 }
 
+function pararBatimento() {
+  clearInterval(timerBatimento);
+  timerBatimento = null;
+  pingPendenteDesde = 0;
+}
+
+function enviarPing() {
+  if (!Radar.recursos.has("ping")) return;
+  if (Radar.estado !== "conectado" || Radar.socket?.readyState !== WebSocket.OPEN) return;
+  if (!pingPendenteDesde) pingPendenteDesde = Date.now();
+  try { Radar.socket.send(JSON.stringify({ type: "ping" })); } catch (_) {}
+}
+
+function conferirBatimento() {
+  if (!pingPendenteDesde) return;
+  if (Date.now() - pingPendenteDesde < LIMITE_SEM_RESPOSTA) return;
+  if (ultimaAtividade > pingPendenteDesde) { pingPendenteDesde = 0; return; }
+  // Nada chegou desde o ping: o socket está morto, só o navegador não sabe.
+  console.warn("Sem resposta do servidor: reconectando.");
+  pingPendenteDesde = 0;
+  try { Radar.socket?.close(4000, "sem batimento"); } catch (_) {}
+}
+
+function iniciarBatimento() {
+  pararBatimento();
+  if (!Radar.recursos.has("ping")) return;
+  timerBatimento = setInterval(() => {
+    conferirBatimento();
+    if (Date.now() - ultimaAtividade >= INTERVALO_PING) enviarPing();
+  }, 5000);
+}
+
 async function conectar() {
   if (conectando || encerradoDeProposito) return;
   if (Radar.socket?.readyState === WebSocket.OPEN) return;
   if (!navigator.onLine) return;
 
-  // A marcação vem ANTES do await. Antes ela vinha depois, e duas chamadas
-  // quase simultâneas (visibilitychange junto com o evento "online", por
-  // exemplo) passavam as duas pela checagem acima e abriam DOIS WebSockets.
-  // Cada um com seu onmessage, e cada evento do servidor chegava duplicado
-  // na página.
+  // A marcação vem ANTES do await: duas chamadas quase simultâneas
+  // (visibilitychange junto com o evento "online", por exemplo) passavam as
+  // duas pela checagem acima e abriam DOIS WebSockets — cada evento do
+  // servidor chegava duplicado na página.
   conectando = true;
   Radar.estado = "conectando";
 
@@ -128,12 +206,12 @@ async function conectar() {
 
   let token;
   try {
-    // Um token novo a cada conexão: o anterior expira em uma hora e a versão
-    // antiga reusava para sempre o token pego no primeiro carregamento.
+    // Um token novo a cada conexão: o anterior expira em uma hora.
     token = await s.user.getIdToken();
   } catch (err) {
     console.error("Falha ao obter o token do Firebase:", err);
     conectando = false;
+    Radar.estado = "desconectado";
     agendarReconexao();
     return;
   }
@@ -144,6 +222,7 @@ async function conectar() {
   } catch (err) {
     console.error("Falha ao abrir o WebSocket:", err);
     conectando = false;
+    Radar.estado = "desconectado";
     agendarReconexao();
     return;
   }
@@ -167,6 +246,9 @@ async function conectar() {
   };
 
   ws.onmessage = (evento) => {
+    if (Radar.socket !== ws) return;
+    ultimaAtividade = Date.now();
+
     let msg;
     try {
       msg = JSON.parse(evento.data);
@@ -175,15 +257,24 @@ async function conectar() {
     }
 
     if (msg.type === "auth_ok") {
-      console.log("Conectado ao Sinex como", msg.content);
       conectando = false;
       tentativas = 0;
       Radar.estado = "conectado";
+      Radar.recursos = new Set(msg.payload?.recursos || []);
+      iniciarBatimento();
 
+      const agora = Date.now();
       const pendentes = Radar.fila.splice(0);
-      pendentes.forEach((d) => ws.send(JSON.stringify(d)));
+      pendentes
+        .filter((item) => !item.expiraEm || item.expiraEm > agora)
+        .forEach((item) => ws.send(JSON.stringify(item.dados)));
 
-      window.dispatchEvent(new CustomEvent("radar_conectado"));
+      window.dispatchEvent(new CustomEvent("radar_conectado", { detail: { recursos: [...Radar.recursos] } }));
+      return;
+    }
+
+    if (msg.type === "pong") {
+      pingPendenteDesde = 0;
       return;
     }
 
@@ -192,16 +283,18 @@ async function conectar() {
   };
 
   ws.onclose = (evento) => {
+    if (Radar.socket !== ws) return;
     conectando = false;
     Radar.estado = "desconectado";
     Radar.socket = null;
+    pararBatimento();
     window.dispatchEvent(new CustomEvent("radar_desconectado"));
 
     // 1008 = política violada: token recusado ou conta bloqueada. Insistir
     // não resolve, então mandamos a pessoa refazer o login.
     if (evento.code === 1008) {
       console.warn("Conexão recusada pelo servidor:", evento.reason);
-      Core.aviso(evento.reason || "Sessão expirada. Entre novamente.", "#ed4956");
+      Core.aviso(evento.reason || "Sessão expirada. Entre novamente.", "erro");
       return;
     }
 
@@ -222,11 +315,26 @@ let somNotificacao = null;
 let somToque = null;
 
 function tocarNotificacao() {
+  // Configurações > "Som de nova mensagem". O toque de chamada não depende
+  // disto: desligar o som de mensagem não pode fazer ninguém perder ligação.
+  try { if (localStorage.getItem("somMensagens") === "desligado") return; } catch (_) {}
   try {
     if (!somNotificacao) somNotificacao = new Audio("/assets/notificacao.wav");
     somNotificacao.currentTime = 0;
     somNotificacao.play().catch(() => {});
   } catch (_) {}
+}
+
+// Um aviso por conversa a cada instante basta para marcar a entrega.
+const entregasAgendadas = new Map();
+
+function agendarEntrega(chatId) {
+  if (!chatId || entregasAgendadas.has(chatId)) return;
+  entregasAgendadas.set(chatId, setTimeout(async () => {
+    entregasAgendadas.delete(chatId);
+    const s = await sessao({ exigirLogin: false });
+    if (s) marcarEntregueDoAviso(s, chatId);
+  }, 800));
 }
 
 function tratarMensagem(msg) {
@@ -248,6 +356,11 @@ function tratarMensagem(msg) {
       try { localStorage.setItem("naoLidas", String(naoLidas)); } catch (_) {}
       atualizarBadge();
       tocarNotificacao();
+
+      // Entregue: a caixa de entrada e a própria conversa marcam sozinhas;
+      // nas outras telas quem marca é o aviso.
+      const naCaixaDeEntrada = window.location.pathname.includes("inbox.html");
+      if (!naCaixaDeEntrada) agendarEntrega(chatIdDaMensagem);
     }
     return;
   }
@@ -257,9 +370,25 @@ function tratarMensagem(msg) {
     return;
   }
 
+  // Quem liga pergunta se o balão já está tocando aqui (o primeiro aviso
+  // pode ter saído antes de a janela da chamada de lá conectar).
+  if (msg.type === "webrtc" && msg.content === "consultar_toque") {
+    let dados = null;
+    try { dados = JSON.parse(localStorage.getItem("chamada_ativa") || "null"); } catch (_) {}
+    if (dados?.quemLiga === msg.from && document.getElementById("incomingCallUI")) {
+      Radar.emit({ type: "webrtc", to: msg.from, content: "tocando", payload: { ocupado: !!dados.ocupado } });
+    }
+    return;
+  }
+
   if (msg.type === "cancelar_chamada") {
-    try { localStorage.removeItem("chamada_ativa"); } catch (_) {}
-    removerBalaoChamada();
+    let dados = null;
+    try { dados = JSON.parse(localStorage.getItem("chamada_ativa") || "null"); } catch (_) {}
+    // Só fecha o balão se o cancelamento for de quem está ligando.
+    if (!dados || dados.quemLiga === msg.from) {
+      try { localStorage.removeItem("chamada_ativa"); } catch (_) {}
+      removerBalaoChamada();
+    }
   }
 }
 
@@ -268,11 +397,16 @@ export function atualizarBadge() {
   if (!badge) return;
 
   const naoLidas = parseInt(localStorage.getItem("naoLidas"), 10) || 0;
+  const link = badge.closest("a");
   if (naoLidas > 0) {
     badge.textContent = naoLidas > 99 ? "99+" : String(naoLidas);
-    badge.style.display = "flex";
+    badge.classList.remove("u-hidden");
+    badge.classList.add("visivel");
+    link?.setAttribute("aria-label", `Mensagens, ${naoLidas} ${naoLidas === 1 ? "não lida" : "não lidas"}`);
   } else {
-    badge.style.display = "none";
+    badge.classList.remove("visivel");
+    badge.classList.add("u-hidden");
+    link?.setAttribute("aria-label", "Mensagens");
   }
 }
 
@@ -286,17 +420,36 @@ window.zerarNotificacoes = zerarNotificacoes;
 
 async function mostrarChamadaRecebida(msg) {
   let foto = AVATAR_PADRAO;
+  let nome = "";
   try {
     const perfil = await buscarPerfilPorUsername(msg.from);
     if (perfil?.foto) foto = perfil.foto;
+    if (perfil?.nome) nome = perfil.nome;
   } catch (_) {}
 
-  const dados = { quemLiga: msg.from, tipo: msg.content, foto, inicio: Date.now() };
+  // Já existe uma chamada rolando neste navegador? Então é chamada em espera.
+  const emAndamento = lerEstadoDaChamada();
+  const ocupado = !!emAndamento;
+
+  // Quem liga passa de "Chamando…" para "Tocando…" (ou "em outra chamada").
+  Radar.emit({ type: "webrtc", to: msg.from, content: "tocando", payload: { ocupado } });
+
+  const dados = { quemLiga: msg.from, nome, tipo: msg.content, foto, inicio: Date.now(), ocupado };
   try { localStorage.setItem("chamada_ativa", JSON.stringify(dados)); } catch (_) {}
   renderizarBalaoChamada();
 }
 
 let timeoutChamada = null;
+
+function botaoRedondo(classe, rotulo, icone) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `btn-chamada ${classe}`;
+  btn.setAttribute("aria-label", rotulo);
+  btn.title = rotulo;
+  btn.innerHTML = icone;
+  return btn;
+}
 
 /**
  * Desenha o balão de chamada recebida.
@@ -324,40 +477,39 @@ export function renderizarBalaoChamada() {
   document.getElementById("incomingCallUI")?.remove();
 
   const ehAudio = dados.tipo === "audio";
+  const nomeVisivel = dados.nome || `@${dados.quemLiga}`;
 
   const caixa = document.createElement("div");
   caixa.id = "incomingCallUI";
-  caixa.className = "chamada-recebida";
+  caixa.className = dados.ocupado ? "chamada-recebida chamada-recebida-espera" : "chamada-recebida";
   caixa.setAttribute("role", "alertdialog");
-  caixa.setAttribute("aria-label", `Chamada recebida de ${dados.quemLiga}`);
+  caixa.setAttribute("aria-label", `${ehAudio ? "Chamada de voz" : "Chamada de vídeo"} de ${nomeVisivel}`);
 
   const avatar = document.createElement("img");
   avatar.className = "chamada-avatar";
   avatar.alt = "";
   avatar.src = urlSegura(dados.foto, AVATAR_PADRAO);
+  avatar.addEventListener("error", () => { avatar.src = AVATAR_PADRAO; }, { once: true });
 
   const info = document.createElement("div");
   info.className = "chamada-info";
   const nome = document.createElement("h4");
-  nome.textContent = dados.quemLiga; // textContent: nada de HTML aqui
+  nome.textContent = nomeVisivel; // textContent: nada de HTML aqui
   const tipo = document.createElement("p");
-  tipo.textContent = ehAudio ? "Chamada de voz..." : "Chamada de vídeo...";
+  tipo.textContent = dados.ocupado
+    ? `${ehAudio ? "Chamada de voz" : "Chamada de vídeo"} · você está em outra chamada`
+    : (ehAudio ? "Chamada de voz recebida" : "Chamada de vídeo recebida");
   info.append(nome, tipo);
 
   const acoes = document.createElement("div");
   acoes.className = "chamada-acoes";
 
-  const btnRecusar = document.createElement("button");
-  btnRecusar.type = "button";
-  btnRecusar.className = "btn-chamada btn-recusar";
-  btnRecusar.setAttribute("aria-label", "Recusar chamada");
-  btnRecusar.innerHTML = iconeTelefone(true);
-
-  const btnAtender = document.createElement("button");
-  btnAtender.type = "button";
-  btnAtender.className = "btn-chamada btn-atender";
-  btnAtender.setAttribute("aria-label", "Atender chamada");
-  btnAtender.innerHTML = iconeTelefone(false);
+  const btnRecusar = botaoRedondo("btn-recusar", "Recusar chamada", iconeTelefone(true));
+  const btnAtender = botaoRedondo(
+    "btn-atender",
+    dados.ocupado ? "Encerrar a chamada atual e atender" : "Atender chamada",
+    ehAudio ? iconeTelefone(false) : iconeCamera()
+  );
 
   acoes.append(btnRecusar, btnAtender);
   caixa.append(avatar, info, acoes);
@@ -369,6 +521,15 @@ export function renderizarBalaoChamada() {
 
     const params = new URLSearchParams({ u: dados.quemLiga, papel: "receptor" });
     if (ehAudio) params.set("audio", "true");
+
+    // Chamada em espera: a janela da chamada atual encerra a ligação de
+    // agora (avisando a outra pessoa) e ELA MESMA abre a nova. Abrir por aqui
+    // navegaria aquela janela no meio da ligação.
+    if (dados.ocupado && lerEstadoDaChamada()) {
+      avisarJanelas({ tipo: "atender-outra", params: params.toString() });
+      focarJanelaDaChamada();
+      return;
+    }
 
     // A chamada vai para uma janela própria: assim ela sobrevive a qualquer
     // navegação no app. Se o navegador bloquear a janela, cai no
@@ -382,7 +543,7 @@ export function renderizarBalaoChamada() {
     try { localStorage.removeItem("chamada_ativa"); } catch (_) {}
     removerBalaoChamada();
 
-    Radar.emit({ type: "cancelar_chamada", to: dados.quemLiga });
+    Radar.emit({ type: "cancelar_chamada", to: dados.quemLiga, content: "recusada" });
 
     const s = await sessao({ exigirLogin: false });
     if (s) {
@@ -395,26 +556,26 @@ export function renderizarBalaoChamada() {
   });
 
   try {
-    if (!somToque) {
-      somToque = new Audio("/assets/toque.wav");
-      somToque.loop = true;
+    if (dados.ocupado) {
+      // Em espera, um toque discreto em vez do toque de chamada por cima da
+      // conversa em andamento.
+      tocarNotificacao();
+    } else {
+      if (!somToque) {
+        somToque = new Audio("/assets/toque.wav");
+        somToque.loop = true;
+      }
+      somToque.play().catch(() => {});
     }
-    somToque.play().catch(() => {});
   } catch (_) {}
 
+  // Quem liga registra "não atendida" quando desiste; aqui o balão só some.
+  // (Antes os dois lados registravam, e cada aba aberta registrava de novo:
+  // uma chamada perdida virava três mensagens na conversa.)
   clearTimeout(timeoutChamada);
-  timeoutChamada = setTimeout(async () => {
+  timeoutChamada = setTimeout(() => {
     try { localStorage.removeItem("chamada_ativa"); } catch (_) {}
     removerBalaoChamada();
-
-    const s = await sessao({ exigirLogin: false });
-    if (s) {
-      await registrarEventoDeChamada(
-        s,
-        dados.quemLiga,
-        ehAudio ? "📞 Chamada de voz perdida" : "📹 Chamada de vídeo perdida"
-      );
-    }
   }, restante);
 }
 
@@ -427,9 +588,18 @@ export function removerBalaoChamada() {
   document.getElementById("incomingCallUI")?.remove();
 }
 
+// Atendeu ou recusou em outra aba: o balão (e o toque) somem aqui também.
+window.addEventListener("storage", (evento) => {
+  if (evento.key === "chamada_ativa" && !evento.newValue) removerBalaoChamada();
+});
+
 function iconeTelefone(recusar) {
   const rotacao = recusar ? ' transform="rotate(135 12 12)"' : "";
-  return `<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"${rotacao}/></svg>`;
+  return `<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"${rotacao}/></svg>`;
+}
+
+function iconeCamera() {
+  return '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>';
 }
 
 // ==========================================================================
@@ -442,24 +612,27 @@ window.addEventListener("online", () => {
 });
 
 window.addEventListener("offline", () => {
-  Core.aviso("Você está offline. As mensagens ficam na fila.", "#e0a800");
-  Radar.estado = "desconectado";
-  Radar.socket?.close();
+  Core.aviso("Você está offline. As mensagens ficam na fila.", "alerta");
+  try { Radar.socket?.close(); } catch (_) {}
 });
 
 // Ao voltar para a aba, reconecta na hora em vez de esperar o backoff — em
-// celular o sistema costuma matar o socket em segundo plano.
+// celular o sistema costuma matar o socket em segundo plano. Se o socket
+// parece aberto, um ping confirma que ele está vivo de verdade.
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && Radar.estado !== "conectado") {
+  if (document.visibilityState !== "visible") return;
+  if (Radar.estado !== "conectado") {
     tentativas = 0;
     pararReconexao();
     conectar();
+  } else {
+    enviarPing();
   }
 });
 
-// O lastSeen agora é gravado pelo servidor Go quando a última aba cai. O
-// cliente não escreve mais no Firestore de minuto em minuto (eram cerca de
-// 1.440 escritas por dia por pessoa ativa).
+// O lastSeen é gravado pelo servidor Go quando a última aba cai. O cliente não
+// escreve no Firestore de minuto em minuto (eram cerca de 1.440 escritas por
+// dia por pessoa ativa).
 
 // A barra de "chamada em andamento" precisa existir em toda tela. radar.js já
 // é carregado em todas elas, então é daqui que ela sobe.

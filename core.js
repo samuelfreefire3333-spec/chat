@@ -4,7 +4,12 @@ import {
   collection, query, where, limit, getDocs, doc, getDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-export const AVATAR_PADRAO = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+// Avatar local: o anterior vinha de um site de ícones de terceiros, e bastava
+// ele demorar (ou cair) para todo avatar sem foto virar uma imagem quebrada.
+// Perfis antigos que gravaram o endereço externo continuam funcionando.
+export const AVATAR_PADRAO = "/assets/avatar-padrao.svg";
+// Grupos não têm foto: um desenho próprio, para não parecer uma pessoa sem foto.
+export const AVATAR_GRUPO = "/assets/avatar-grupo.svg";
 
 // ==========================================================================
 // 1. SESSÃO
@@ -46,6 +51,20 @@ async function carregarPerfil(uid) {
   return { id: porEmail.docs[0].id, ...porEmail.docs[0].data() };
 }
 
+// Preferências do aparelho (não da conta): sobrevivem ao sair da conta.
+// Antes o logout apagava tudo e o app voltava para o tema do sistema.
+const PREFERENCIAS_LOCAIS = ["tema", "somMensagens"];
+
+function limparCacheLocal() {
+  try {
+    const guardadas = PREFERENCIAS_LOCAIS
+      .map((chave) => [chave, localStorage.getItem(chave)])
+      .filter(([, valor]) => valor !== null);
+    localStorage.clear();
+    guardadas.forEach(([chave, valor]) => localStorage.setItem(chave, valor));
+  } catch (_) {}
+}
+
 /**
  * Devolve a sessão corrente: { user, username, perfil }.
  * Sem login, redireciona para login.html — a menos que exigirLogin seja false,
@@ -78,7 +97,7 @@ export function sessao({ exigirLogin = true } = {}) {
     }
 
     if (!s && exigirLogin) {
-      try { localStorage.clear(); } catch (_) {}
+      limparCacheLocal();
       window.location.replace("login.html");
       // Promise que nunca resolve: impede o código seguinte de rodar durante
       // o redirecionamento.
@@ -91,7 +110,7 @@ export function sessao({ exigirLogin = true } = {}) {
 /** Limpa o cache de sessão (usado no logout). */
 export function encerrarSessao() {
   promessaSessao = null;
-  try { localStorage.clear(); } catch (_) {}
+  limparCacheLocal();
 }
 
 /**
@@ -167,7 +186,21 @@ export function destinoSeguro(destino, alternativa = "inbox.html") {
 
 let timeoutToast = null;
 
-export function aviso(mensagem, cor = "var(--primary-accent)") {
+// O visual de cada tipo mora no style.css (#toast-aviso[data-tipo]).
+// Antes cada chamada passava uma cor em hexadecimal, e aviso sem cor saía
+// vermelho — "Enviando imagem..." tinha a mesma cara de um erro.
+const TIPOS_DE_AVISO = new Set(["info", "sucesso", "alerta", "erro"]);
+
+// Compatibilidade: as cores antigas continuam aceitas e viram o tipo
+// equivalente, para nenhuma chamada esquecida mudar de aparência.
+const COR_PARA_TIPO = { "#00a884": "sucesso", "#e0a800": "alerta", "#ed4956": "erro" };
+
+/**
+ * Mostra um aviso rápido na base da tela.
+ * @param {string} mensagem
+ * @param {"info"|"sucesso"|"alerta"|"erro"} [tipo="info"]
+ */
+export function aviso(mensagem, tipo = "info") {
   let toast = document.getElementById("toast-aviso");
   if (!toast) {
     toast = document.createElement("div");
@@ -177,17 +210,40 @@ export function aviso(mensagem, cor = "var(--primary-accent)") {
     document.body.appendChild(toast);
   }
 
+  const chave = String(tipo).trim();
+  const tipoFinal = COR_PARA_TIPO[chave.toLowerCase()] || chave;
+
   toast.textContent = mensagem;
-  toast.style.background = cor;
+  if (TIPOS_DE_AVISO.has(tipoFinal)) {
+    toast.dataset.tipo = tipoFinal;
+    toast.style.removeProperty("background");
+    toast.style.removeProperty("color");
+  } else {
+    // Cor personalizada: mantém o comportamento antigo.
+    toast.dataset.tipo = "personalizado";
+    toast.style.background = chave;
+    toast.style.color = "var(--text-on-color)";
+  }
   toast.classList.add("show");
 
+  // Mensagem longa fica mais tempo na tela: 3 s eram pouco para ler uma
+  // frase inteira, e o aviso agora quebra linha em vez de cortar o texto.
+  const duracao = Math.min(6000, Math.max(3000, 1800 + String(mensagem).length * 45));
   clearTimeout(timeoutToast);
-  timeoutToast = setTimeout(() => toast.classList.remove("show"), 3000);
+  timeoutToast = setTimeout(() => toast.classList.remove("show"), duracao);
 }
 
-/** Confirmação em modal, substituindo o confirm() nativo. */
-export function confirmar(texto, { confirmarTexto = "Confirmar", perigo = true } = {}) {
+/**
+ * Confirmação em modal, substituindo o confirm() nativo.
+ *
+ * Numa ação de perigo o foco começa em "Cancelar": antes começava no botão de
+ * confirmar e um Enter distraído apagava a conversa. Tab fica preso dentro do
+ * modal e o foco volta para onde estava ao fechar.
+ */
+export function confirmar(texto, { confirmarTexto = "Confirmar", perigo = true, titulo = "" } = {}) {
   return new Promise((resolve) => {
+    const focoAnterior = document.activeElement;
+
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
 
@@ -196,7 +252,20 @@ export function confirmar(texto, { confirmarTexto = "Confirmar", perigo = true }
     caixa.setAttribute("role", "alertdialog");
     caixa.setAttribute("aria-modal", "true");
 
+    const idTexto = `modal-texto-${Date.now()}`;
+    caixa.setAttribute("aria-describedby", idTexto);
+
+    if (titulo) {
+      const h = document.createElement("h2");
+      h.className = "modal-titulo";
+      h.id = `${idTexto}-titulo`;
+      h.textContent = titulo;
+      caixa.setAttribute("aria-labelledby", h.id);
+      caixa.appendChild(h);
+    }
+
     const p = document.createElement("p");
+    p.id = idTexto;
     p.textContent = texto;
 
     const acoes = document.createElement("div");
@@ -209,7 +278,7 @@ export function confirmar(texto, { confirmarTexto = "Confirmar", perigo = true }
 
     const btnOk = document.createElement("button");
     btnOk.type = "button";
-    btnOk.className = perigo ? "btn-modal btn-modal-perigo" : "btn-modal";
+    btnOk.className = perigo ? "btn-modal btn-modal-perigo" : "btn-modal btn-modal-primario";
     btnOk.textContent = confirmarTexto;
 
     acoes.append(btnCancelar, btnOk);
@@ -218,23 +287,31 @@ export function confirmar(texto, { confirmarTexto = "Confirmar", perigo = true }
     document.body.appendChild(overlay);
 
     requestAnimationFrame(() => overlay.classList.add("aberto"));
-    btnOk.focus();
+    (perigo ? btnCancelar : btnOk).focus();
 
+    let fechado = false;
     const fechar = (resultado) => {
+      if (fechado) return;
+      fechado = true;
       overlay.classList.remove("aberto");
       setTimeout(() => overlay.remove(), 200);
-      document.removeEventListener("keydown", aoTeclar);
+      document.removeEventListener("keydown", aoTeclar, true);
+      try { focoAnterior?.focus?.(); } catch (_) {}
       resolve(resultado);
     };
     const aoTeclar = (e) => {
-      if (e.key === "Escape") fechar(false);
-      if (e.key === "Enter") fechar(true);
+      if (e.key === "Escape") { e.preventDefault(); fechar(false); return; }
+      if (e.key === "Tab") {
+        // Mantém o Tab entre os dois botões.
+        e.preventDefault();
+        (document.activeElement === btnOk ? btnCancelar : btnOk).focus();
+      }
     };
 
     btnCancelar.addEventListener("click", () => fechar(false));
     btnOk.addEventListener("click", () => fechar(true));
     overlay.addEventListener("click", (e) => { if (e.target === overlay) fechar(false); });
-    document.addEventListener("keydown", aoTeclar);
+    document.addEventListener("keydown", aoTeclar, true);
   });
 }
 
@@ -263,6 +340,44 @@ export function tempoRelativo(timestamp) {
   if (dias < 7) return `há ${dias} dias`;
 
   return new Date(ms).toLocaleDateString("pt-BR");
+}
+
+const DIAS_DA_SEMANA = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+
+/**
+ * "visto por último há 5 min", "visto por último ontem às 21:40"...
+ *
+ * Até 24 horas o texto é relativo (é o que muda a cada minuto e que a pessoa
+ * lê de relance); depois disso vira data e hora, como nos mensageiros
+ * conhecidos. Com { curto: true } sai "visto há 5 min", para listas.
+ * Sem horário conhecido devolve "" — quem chama decide o que mostrar.
+ */
+export function vistoPorUltimo(timestamp, { curto = false } = {}) {
+  const ms = paraMillis(timestamp);
+  if (!ms) return "";
+
+  const prefixo = curto ? "visto" : "visto por último";
+  const diff = Date.now() - ms;
+
+  if (diff < 60_000) return `${prefixo} agora mesmo`;
+
+  const minutos = Math.floor(diff / 60_000);
+  if (minutos < 60) return `${prefixo} há ${minutos} min`;
+
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return `${prefixo} há ${horas} h`;
+
+  const quando = new Date(ms);
+  const hora = quando.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const ontem = new Date();
+  ontem.setDate(ontem.getDate() - 1);
+  if (quando.toDateString() === ontem.toDateString()) return `${prefixo} ontem às ${hora}`;
+
+  const dias = Math.floor(horas / 24);
+  if (dias < 7) return `${prefixo} ${DIAS_DA_SEMANA[quando.getDay()]} às ${hora}`;
+
+  const data = quando.toLocaleDateString("pt-BR", curto ? { day: "2-digit", month: "2-digit" } : undefined);
+  return `${prefixo} em ${data}`;
 }
 
 export function horaCurta(timestamp) {
@@ -311,6 +426,90 @@ export function definirAvatar(elemento, url) {
   elemento.addEventListener("error", () => { elemento.src = AVATAR_PADRAO; }, { once: true });
 }
 
+/**
+ * Mostrar/esconder usam a classe .u-hidden (display: none !important no
+ * style.css). Antes cada tela alternava style.display na mão, e a classe
+ * perdia para o display do próprio componente: o link "Painel Profissional"
+ * aparecia para todo mundo e o botão de câmera aparecia em chamada de voz.
+ */
+export function mostrar(elemento, visivel = true) {
+  elemento?.classList.toggle("u-hidden", !visivel);
+}
+
+export function esconder(elemento) {
+  elemento?.classList.add("u-hidden");
+}
+
+/**
+ * Copia texto para a área de transferência. Usa a API moderna quando existe
+ * e, sem ela (navegador antigo ou página fora de HTTPS), o caminho antigo com
+ * um campo escondido. Devolve true se copiou.
+ */
+export async function copiarTexto(texto) {
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(texto);
+      return true;
+    }
+  } catch (_) { /* sem permissão: tenta o caminho antigo */ }
+
+  try {
+    const campo = document.createElement("textarea");
+    campo.value = texto;
+    campo.setAttribute("readonly", "");
+    campo.className = "sr-only";
+    document.body.appendChild(campo);
+    campo.select();
+    const ok = document.execCommand("copy");
+    campo.remove();
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+/**
+ * Compartilha um link pela folha nativa do sistema (celular, Windows, macOS)
+ * e, onde ela não existe, copia o link e avisa.
+ * Devolve "compartilhado", "cancelado", "copiado" ou "falhou".
+ */
+export async function compartilharLink({ titulo = "", texto = "", url }) {
+  if (typeof navigator.share === "function") {
+    try {
+      await navigator.share({ title: titulo, text: texto, url });
+      return "compartilhado";
+    } catch (erro) {
+      if (erro?.name === "AbortError") return "cancelado";
+      // Qualquer outro erro (sem permissão, sem gesto do usuário): copia.
+    }
+  }
+  const ok = await copiarTexto(url);
+  aviso(ok ? "Link copiado." : "Não foi possível copiar o link.", ok ? "sucesso" : "erro");
+  return ok ? "copiado" : "falhou";
+}
+
+/**
+ * Botões de "mostrar senha" (olho) ligados por data-alvo ao id do campo.
+ * O texto do rótulo acompanha o estado, para leitores de tela.
+ */
+export function configurarCamposDeSenha(raiz = document) {
+  raiz.querySelectorAll(".btn-ver-senha[data-alvo]").forEach((btn) => {
+    const campo = document.getElementById(btn.dataset.alvo);
+    if (!campo || btn.dataset.ligado) return;
+    btn.dataset.ligado = "sim";
+    btn.addEventListener("click", () => {
+      const mostrando = campo.type === "text";
+      campo.type = mostrando ? "password" : "text";
+      btn.setAttribute("aria-pressed", mostrando ? "false" : "true");
+      btn.setAttribute("aria-label", mostrando ? "Mostrar senha" : "Esconder senha");
+      btn.classList.toggle("mostrando", !mostrando);
+      // Mantém o cursor no campo, no fim do texto.
+      campo.focus({ preventScroll: true });
+      try { campo.setSelectionRange(campo.value.length, campo.value.length); } catch (_) {}
+    });
+  });
+}
+
 /** Preenche o avatar da barra lateral a partir do cache e depois da sessão. */
 export async function montarAvatarNav() {
   const nav = document.getElementById("navAvatar");
@@ -345,6 +544,12 @@ if ("serviceWorker" in navigator) {
   // nada tinha mudado.
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!jaTinhaControlador || recarregando) return;
+
+    // A janela da chamada NUNCA recarrega sozinha: recarregar destrói a
+    // conexão WebRTC e derruba a chamada. Ela já abre a versão nova na
+    // próxima chamada (ou quando volta para a conversa ao encerrar).
+    if (document.documentElement.dataset.semRecargaAutomatica === "sim") return;
+
     recarregando = true;
     window.location.reload();
   });
@@ -354,8 +559,8 @@ if ("serviceWorker" in navigator) {
       .then((registro) => {
         // Procura versão nova a cada carregamento e de hora em hora, para quem
         // deixa o app aberto o dia inteiro.
-        registro.update().catch(() => {});
-        setInterval(() => registro.update().catch(() => {}), 60 * 60 * 1000);
+        registro?.update?.().catch(() => {});
+        setInterval(() => registro?.update?.().catch(() => {}), 60 * 60 * 1000);
       })
       .catch((err) => {
         console.error("Falha ao registrar o Service Worker:", err);
@@ -365,6 +570,7 @@ if ("serviceWorker" in navigator) {
 
 const Core = {
   AVATAR_PADRAO,
+  AVATAR_GRUPO,
   sessao,
   encerrarSessao,
   escaparTexto,
@@ -373,6 +579,7 @@ const Core = {
   aviso,
   confirmar,
   tempoRelativo,
+  vistoPorUltimo,
   horaCurta,
   paraMillis,
   idDoChat,
@@ -380,6 +587,11 @@ const Core = {
   definirAvatar,
   montarAvatarNav,
   atualizarPerfilEmCache,
+  mostrar,
+  esconder,
+  copiarTexto,
+  compartilharLink,
+  configurarCamposDeSenha,
 };
 
 export default Core;

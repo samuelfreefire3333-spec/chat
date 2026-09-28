@@ -3,28 +3,80 @@
 //
 // Este arquivo substitui o bloco inline que estava copiado em 13 páginas e que
 // obrigava o CSP a liberar 'unsafe-inline' em script-src.
+//
+// Preferências possíveis (localStorage "tema"):
+//   "claro" | "escuro"  → tema fixo
+//   ausente             → automático: segue o sistema e muda junto com ele
 (function () {
   "use strict";
 
   var raiz = document.documentElement;
-  var tema;
+  var consultaClaro = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
 
-  try {
-    tema = localStorage.getItem("tema");
-  } catch (_) {
-    // Navegador em modo privado ou com armazenamento bloqueado.
-    tema = null;
+  function lerPreferencia() {
+    try {
+      var salvo = localStorage.getItem("tema");
+      return salvo === "claro" || salvo === "escuro" ? salvo : "auto";
+    } catch (_) {
+      // Navegador em modo privado ou com armazenamento bloqueado.
+      return "auto";
+    }
   }
 
-  if (!tema) {
-    // Sem preferência salva, segue o sistema operacional.
-    tema = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches
-      ? "claro"
-      : "escuro";
+  function temaEfetivo(preferencia) {
+    if (preferencia === "claro" || preferencia === "escuro") return preferencia;
+    return consultaClaro && consultaClaro.matches ? "claro" : "escuro";
   }
 
-  raiz.classList.toggle("light-theme", tema === "claro");
-  raiz.classList.toggle("dark-theme", tema !== "claro");
+  // Cor da barra do navegador/sistema no celular. Páginas com cor fixa (a da
+  // chamada é sempre escura) já trazem a própria <meta> e ficam como estão.
+  function pintarBarraDoSistema(tema) {
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta && !meta.hasAttribute("data-tema-auto")) return;
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      meta.setAttribute("data-tema-auto", "");
+      (document.head || raiz).appendChild(meta);
+    }
+    meta.content = tema === "claro" ? "#ffffff" : "#000000";
+  }
+
+  function aplicar(preferencia) {
+    var tema = temaEfetivo(preferencia);
+    raiz.classList.toggle("light-theme", tema === "claro");
+    raiz.classList.toggle("dark-theme", tema !== "claro");
+    pintarBarraDoSistema(tema);
+    return tema;
+  }
+
+  aplicar(lerPreferencia());
+
+  // No automático, acompanha a troca de tema do sistema com a página aberta.
+  if (consultaClaro) {
+    var aoMudarSistema = function () {
+      if (lerPreferencia() === "auto") aplicar("auto");
+    };
+    if (consultaClaro.addEventListener) consultaClaro.addEventListener("change", aoMudarSistema);
+    else if (consultaClaro.addListener) consultaClaro.addListener(aoMudarSistema);
+  }
+
+  // Usado pela tela de Aparência: grava a escolha e aplica na hora.
+  window.sinexTema = {
+    preferencia: lerPreferencia,
+    definir: function (preferencia) {
+      try {
+        if (preferencia === "claro" || preferencia === "escuro") localStorage.setItem("tema", preferencia);
+        else localStorage.removeItem("tema");
+      } catch (_) {}
+      return aplicar(preferencia);
+    }
+  };
+
+  // Outra aba trocou o tema: esta acompanha.
+  window.addEventListener("storage", function (e) {
+    if (e.key === "tema" || e.key === null) aplicar(lerPreferencia());
+  });
 
   // Atalhos de UX (NÃO são controle de segurança): evitam piscar a interface
   // errada por um instante. Quem decide de verdade é Core.sessao(), validando

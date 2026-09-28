@@ -1,59 +1,67 @@
-<!DOCTYPE html> 
-<html lang="pt-BR" data-so-deslogado="sim"> 
-<head>     
-    <meta charset="UTF-8">     
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">          
-    
-<!-- 👑 CONECTANDO AO SEU CSS MESTRE -->
+<!DOCTYPE html>
+<html lang="pt-BR" data-so-deslogado="sim">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
     <link rel="stylesheet" href="style.css">
-
     <script src="tema.js"></script>
-<title>Cadastro - Sinex Chat</title>
-    <link rel="manifest" href="manifest.json">         
-    
-    <!-- ESTILOS EXCLUSIVOS DO CADASTRO (Aproveitando a estrutura limpa) -->
+    <title>Cadastro - Sinex Chat</title>
+    <link rel="manifest" href="manifest.json">
+
+    <!-- Mesma base visual da tela de entrar + ajustes do cadastro -->
+    <link rel="stylesheet" href="login.css">
     <link rel="stylesheet" href="cadastro.css">
- 
-</head> 
-<body>     
-    <div class="auth-wrapper">
+</head>
+<body>
+    <main class="auth-wrapper">
         <div class="auth-box">
-            <div class="auth-logo">Sinex<span>Chat</span></div>
-            <div class="auth-subtitle">CRIE SUA CONTA GRÁTIS</div>
+            <span class="auth-marca" aria-hidden="true">S</span>
+            <h1 class="auth-logo">Sinex<span>Chat</span></h1>
+            <p class="auth-subtitle">Crie sua conta grátis e comece a conversar.</p>
 
-            <div class="input-group">
-                <label for="nome">Nome Completo</label>
-                <!-- Atributo padrão WCAG para autopreenchimento de nome -->
-                <input type="text" id="nome" class="input-field" placeholder="Seu nome" autocomplete="name">
-            </div>
+            <form id="formCadastro" class="auth-form" novalidate>
+                <div class="input-group">
+                    <label for="nome">Nome</label>
+                    <input type="text" id="nome" class="input-field" placeholder="Como você quer ser chamado" autocomplete="name" maxlength="60" required>
+                </div>
 
-            <div class="input-group">
-                <label for="usuario">Nome de Usuário</label>
-                <!-- Atributo padrão WCAG para nome de usuário[cite: 6] -->
-                <input type="text" id="usuario" class="input-field" placeholder="Ex: seunome123" autocomplete="username">
-            </div>
+                <div class="input-group">
+                    <label for="usuario">Nome de usuário</label>
+                    <div class="campo-arroba">
+                        <span class="campo-arroba-prefixo" aria-hidden="true">@</span>
+                        <input type="text" id="usuario" class="input-field" placeholder="seunome123" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="30" aria-describedby="ajudaUsuario" required>
+                    </div>
+                    <span id="ajudaUsuario" class="ajuda-campo">De 3 a 30 caracteres: letras minúsculas, números, ponto, hífen ou _.</span>
+                </div>
 
-            <div class="input-group">
-                <label for="email">E-mail</label>
-                <input type="email" id="email" class="input-field" placeholder="seu@email.com" autocomplete="email">
-            </div>
+                <div class="input-group">
+                    <label for="email">E-mail</label>
+                    <input type="email" id="email" class="input-field" placeholder="seu@email.com" autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" required>
+                </div>
 
-            <div class="input-group">
-                <label for="senha">Senha</label>
-                <!-- Atributo padrão WCAG para indicar que é uma senha nova[cite: 6] -->
-                <input type="password" id="senha" class="input-field" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
-            </div>
+                <div class="input-group">
+                    <label for="senha">Senha</label>
+                    <div class="campo-senha">
+                        <input type="password" id="senha" class="input-field" placeholder="Mínimo 6 caracteres" autocomplete="new-password" aria-describedby="forcaSenhaTexto" required>
+                        <button type="button" class="btn-ver-senha" data-alvo="senha" aria-label="Mostrar senha" aria-pressed="false">
+                            <svg class="icone-olho" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            <svg class="icone-olho-fechado" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                        </button>
+                    </div>
+                    <div class="forca-senha" data-nivel="0" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <span id="forcaSenhaTexto" class="ajuda-campo" aria-live="polite">Use 8 ou mais caracteres, misturando letras e números.</span>
+                </div>
 
-            <button id="btnCadastrar" class="btn-login" type="button">Criar Conta</button>
+                <button id="btnCadastrar" class="btn-login" type="submit">Criar conta</button>
+            </form>
 
             <div class="auth-links">
-                Já tem uma conta? <a href="login.html">Faça Login</a>
+                Já tem uma conta? <a href="login.html">Entrar</a>
             </div>
         </div>
-    </div>
-
-    <div id="toast-aviso">Alerta!</div>     
+    </main>
 
     <script type="module" src="cadastro.js"></script>
-</body> 
+</body>
 </html>

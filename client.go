@@ -36,6 +36,10 @@ type Client struct {
 	// fechado é lido e escrito apenas pela goroutine Hub.Run.
 	fechado bool
 
+	// conectadoEm marca o fim do handshake. O hub descarta avisos de
+	// digitação que chegam colados nele (ver carenciaDigitacao em hub.go).
+	conectadoEm time.Time
+
 	// Controle de taxa, tocado apenas pela readPump.
 	janelaInicio time.Time
 	contador     int

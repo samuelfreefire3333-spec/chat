@@ -1,6 +1,6 @@
 import { db } from "./firebase.js";
 import {
-  doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc, deleteField, collection, query,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, deleteField, collection, query,
   orderBy, limit, startAfter, onSnapshot, getDocs, serverTimestamp, writeBatch, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { idDoChat, buscarPerfilPorUsername, paraMillis } from "./core.js";
@@ -15,6 +15,13 @@ import { idDoChat, buscarPerfilPorUsername, paraMillis } from "./core.js";
 // "chats/{id}" agora também pode ser um grupo (tipo: "grupo"), com 3 ou mais
 // pessoas em "uids"/"usuarios" em vez de exatamente 2. O restante do modelo —
 // mensagens, reações, respostas — é o mesmo para os dois casos.
+//
+// Confirmações de entrega e leitura moram no documento do chat, e não em cada
+// mensagem (mensagem enviada não se reescreve):
+//   entregas.{uid} = Timestamp da mensagem mais recente que chegou ao aparelho
+//   leituras.{uid} = Timestamp da mensagem mais recente que a pessoa viu
+// Uma mensagem com timestamp T foi entregue/lida por alguém quando a marca
+// dessa pessoa é >= T. É uma escrita por conversa aberta, não uma por mensagem.
 
 export const LIMITE_HISTORICO = 200;
 export const TAMANHO_PAGINA_HISTORICO = 50; // quantas mensagens "carregar mais" busca por vez
@@ -42,8 +49,23 @@ export async function garantirChat(sessao, outroUsername) {
   const chatId = idDoChat(meu, outro);
   const ref = doc(db, "chats", chatId);
 
-  const atual = await getDoc(ref);
-  if (atual.exists()) return { chatId, ref };
+  let atual = null;
+  try {
+    atual = await getDoc(ref);
+  } catch (err) {
+    // As regras publicadas em 17/09/2026 leem resource.data.uids também num
+    // documento que ainda não existe — e isso é erro, que o Firestore devolve
+    // como "permission-denied" em vez de "não existe". Era por isso que
+    // começar uma conversa com alguém novo falhava com "Missing or
+    // insufficient permissions".
+    //
+    // Quem participa da conversa nunca tem esta leitura negada. Então, aqui,
+    // negado quer dizer "ainda não existe" — ou "existe e é de outras
+    // pessoas", caso em que a criação logo abaixo também é negada e o erro
+    // chega a quem chamou.
+    if (err?.code !== "permission-denied") throw err;
+  }
+  if (atual?.exists()) return { chatId, ref };
 
   const perfilOutro = await buscarPerfilPorUsername(outro);
   if (!perfilOutro) {
@@ -142,12 +164,29 @@ export async function obterChat(chatId) {
 }
 
 /**
+ * Escuta o documento do chat — é dele que vêm as confirmações de entrega e
+ * leitura. Retorna a função de cancelamento.
+ */
+export function escutarChat(chatId, aoAtualizar, aoErro) {
+  return onSnapshot(
+    doc(db, "chats", chatId),
+    (snap) => aoAtualizar(snap.exists() ? { id: snap.id, ...snap.data() } : null),
+    (err) => {
+      console.error("Erro ao escutar o chat:", err);
+      aoErro?.(err);
+    }
+  );
+}
+
+/**
  * Grava uma mensagem num chat já resolvido (chatId + ref do documento pai).
  * Usada tanto pelo envio direto quanto pelo envio em grupo — a diferença
  * entre os dois está só em como o chat foi resolvido antes de chegar aqui.
  *
- * O timestamp é o do servidor — o relógio do aparelho não é confiável e as
- * regras exigem request.time.
+ * Mensagem e resumo do chat vão num lote só: ou os dois são gravados, ou
+ * nenhum. E, no mesmo lote, os dois serverTimestamp() recebem exatamente o
+ * mesmo horário — é isso que permite à caixa de entrada saber se a última
+ * mensagem já foi lida comparando só o documento do chat.
  */
 async function enviarMensagemEmChat(sessao, chatId, ref, { texto, tipo = "texto", respondendoA = null }) {
   const conteudo = String(texto || "").trim();
@@ -171,17 +210,20 @@ async function enviarMensagemEmChat(sessao, chatId, ref, { texto, tipo = "texto"
     mensagem.respostaTipo = respondendoA.tipo;
   }
 
-  const criada = await addDoc(collection(db, "chats", chatId, "mensagens"), mensagem);
-
+  const refMensagem = doc(collection(db, "chats", chatId, "mensagens"));
+  const lote = writeBatch(db);
+  lote.set(refMensagem, mensagem);
   // Resumo no documento pai, para a caixa de entrada não precisar ler as
   // mensagens de cada conversa.
-  await updateDoc(ref, {
+  lote.update(ref, {
     ultimaMensagem: resumo(tipo, conteudo).slice(0, 120),
     ultimoRemetente: sessao.username,
+    ultimoTipo: tipo,
     timestamp: serverTimestamp(),
   });
+  await lote.commit();
 
-  return { id: criada.id, chatId };
+  return { id: refMensagem.id, chatId };
 }
 
 /** Envia uma mensagem num chat direto (1 para 1), criando o chat se preciso. */
@@ -196,7 +238,7 @@ export async function enviarMensagemNoGrupo(sessao, chatId, opcoes) {
   return enviarMensagemEmChat(sessao, chatId, ref, opcoes);
 }
 
-/** Mensagem automática do sistema (chamada perdida, recusada). */
+/** Mensagem automática do sistema (chamada perdida, recusada, encerrada). */
 export async function registrarEventoDeChamada(sessao, outroUsername, texto) {
   try {
     await enviarMensagem(sessao, outroUsername, { texto, tipo: "sistema" });
@@ -221,6 +263,100 @@ export async function reagirMensagem(chatId, mensagemId, uid, emojiAtual, emojiE
     await updateDoc(ref, { [campo]: deleteField() });
   } else {
     await updateDoc(ref, { [campo]: emojiEscolhido });
+  }
+}
+
+// ==========================================================================
+// CONFIRMAÇÕES DE ENTREGA E LEITURA
+// ==========================================================================
+
+function marca(chat, campo, uid) {
+  return paraMillis(chat?.[campo]?.[uid]);
+}
+
+/** Marca de entrega de alguém, considerando que ler implica ter recebido. */
+function entregaDe(chat, uid) {
+  return Math.max(marca(chat, "entregas", uid), marca(chat, "leituras", uid));
+}
+
+/**
+ * Estado de uma mensagem MINHA com timestamp msgMs:
+ *   "enviada"  — o servidor gravou;
+ *   "entregue" — chegou ao aparelho de todos os outros participantes;
+ *   "lida"     — todos os outros participantes viram.
+ * Em grupo vale a regra dos mensageiros conhecidos: só fica "lida" quando
+ * todo mundo leu.
+ */
+export function estadoDoRecibo(msgMs, chat, meuUid) {
+  if (!chat || !msgMs) return "enviada";
+  const outros = (chat.uids || []).filter((u) => u !== meuUid);
+  if (!outros.length) return "enviada";
+  if (outros.every((u) => marca(chat, "leituras", u) >= msgMs)) return "lida";
+  if (outros.every((u) => entregaDe(chat, u) >= msgMs)) return "entregue";
+  return "enviada";
+}
+
+/** Quantos dos outros participantes já leram até msgMs (para grupos). */
+export function quantosLeram(msgMs, chat, meuUid) {
+  if (!chat || !msgMs) return 0;
+  return (chat.uids || []).filter((u) => u !== meuUid && marca(chat, "leituras", u) >= msgMs).length;
+}
+
+// Últimas marcas gravadas por esta aba. O snapshot do chat demora um
+// instante para refletir a própria escrita, e sem isto a mesma marca era
+// gravada duas ou três vezes seguidas.
+const marcasGravadas = new Map(); // chatId -> { entregue, lido }
+
+/**
+ * Avança as marcas desta pessoa num chat. Nunca retrocede e não escreve
+ * nada se não houver avanço. entregueAte/lidoAte são Timestamps do
+ * Firestore (o horário de servidor de uma mensagem que chegou).
+ */
+export async function marcarRecibos(sessao, chatId, chatAtual, { entregueAte = null, lidoAte = null } = {}) {
+  const uid = sessao?.user?.uid;
+  if (!uid || !chatId) return false;
+
+  const gravadas = marcasGravadas.get(chatId) || { entregue: 0, lido: 0 };
+  const jaEntregue = Math.max(entregaDe(chatAtual, uid), gravadas.entregue);
+  const jaLido = Math.max(marca(chatAtual, "leituras", uid), gravadas.lido);
+
+  // Ler implica ter recebido.
+  let entrega = entregueAte;
+  if (lidoAte && paraMillis(lidoAte) > paraMillis(entrega)) entrega = lidoAte;
+
+  const campos = {};
+  if (entrega && paraMillis(entrega) > jaEntregue) campos[`entregas.${uid}`] = entrega;
+  if (lidoAte && paraMillis(lidoAte) > jaLido) campos[`leituras.${uid}`] = lidoAte;
+  if (!Object.keys(campos).length) return false;
+
+  marcasGravadas.set(chatId, {
+    entregue: Math.max(gravadas.entregue, paraMillis(entrega)),
+    lido: Math.max(gravadas.lido, paraMillis(lidoAte)),
+  });
+
+  try {
+    await updateDoc(doc(db, "chats", chatId), campos);
+    return true;
+  } catch (err) {
+    // Deixa tentar de novo na próxima oportunidade.
+    marcasGravadas.set(chatId, gravadas);
+    console.warn("Não foi possível gravar a confirmação de leitura:", err?.code || err);
+    return false;
+  }
+}
+
+/**
+ * Chegou o aviso (WebSocket) de mensagem nova numa conversa que não está
+ * aberta: marca como entregue usando o horário gravado no próprio chat.
+ */
+export async function marcarEntregueDoAviso(sessao, chatId) {
+  if (!sessao || !chatId) return;
+  try {
+    const chat = await obterChat(chatId);
+    if (!chat || chat.ultimoRemetente === sessao.username || !chat.timestamp) return;
+    await marcarRecibos(sessao, chatId, chat, { entregueAte: chat.timestamp });
+  } catch (err) {
+    console.warn("Não foi possível confirmar a entrega:", err?.code || err);
   }
 }
 
@@ -250,7 +386,7 @@ function paraMensagem(d) {
  * Escuta o histórico recente em ordem cronológica.
  * Retorna a função de cancelamento do listener.
  */
-export function escutarMensagens(chatId, aoAtualizar, { maximo = LIMITE_HISTORICO } = {}) {
+export function escutarMensagens(chatId, aoAtualizar, { maximo = LIMITE_HISTORICO, aoErro = null } = {}) {
   // Ordenamos por timestamp decrescente para pegar as N mais recentes e
   // invertemos no cliente — buscar as primeiras N traria o início da conversa.
   const q = query(
@@ -266,7 +402,10 @@ export function escutarMensagens(chatId, aoAtualizar, { maximo = LIMITE_HISTORIC
       lista.reverse();
       aoAtualizar(lista);
     },
-    (err) => console.error("Erro ao escutar mensagens:", err)
+    (err) => {
+      console.error("Erro ao escutar mensagens:", err);
+      aoErro?.(err);
+    }
   );
 }
 

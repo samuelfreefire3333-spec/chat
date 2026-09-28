@@ -1,88 +1,83 @@
-<!DOCTYPE html> 
-<html lang="pt-BR" data-exige-login="sim"> 
-<head>     
-    <meta charset="UTF-8">     
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">          
-    
-<!-- 👑 CONECTANDO AO SEU CSS MESTRE -->
-    <link rel="stylesheet" href="style.css">
+<!DOCTYPE html>
+<html lang="pt-BR" data-exige-login="sim">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
+    <link rel="stylesheet" href="style.css">
     <script src="tema.js"></script>
-<title>Aparência - Sinex Chat</title> 
-    <link rel="manifest" href="manifest.json">        
-    
-    <!-- ESTILOS EXCLUSIVOS DA TELA DE TEMA -->
+    <title>Aparência - Sinex Chat</title>
+    <link rel="manifest" href="manifest.json">
+
     <link rel="stylesheet" href="configuracoes-tema.css">
- 
-</head> 
-<body>     
-    <div class="app-layout">                  
-        
+</head>
+<body>
+    <div class="app-layout">
+
         <!-- NAVEGAÇÃO LATERAL -->
-        <nav class="side-nav">             
-            <a href="inbox.html" class="nav-item" title="Página Inicial">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.005 16.545a2.997 2.997 0 0 1 2.997-2.997A2.997 2.997 0 0 1 15 16.545V22h7V11.543L12 2 2 11.543V22h7v-5.455Z"></path></svg>
-            </a>             
-            <a href="explorar.html" class="nav-item" title="Pesquisa">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg>
-            </a>             
-            <a href="inbox.html" class="nav-item" title="Mensagens">                 
-                <div id="badgeGlobal" class="badge u-hidden">0</div>                 
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>             
-            </a>             
-            <a href="index.html" class="nav-item" title="Perfil">
-                <img id="navAvatar" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Avatar">
-            </a>                          
-            <!-- Botão ATIVO agora é o de Configurações -->
-            <a href="configuracoes.html" class="nav-item active nav-item-final" title="Mais">                 
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="4" x2="21" y2="4"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="20" x2="21" y2="20"></line></svg>             
-            </a>         
-        </nav>         
-        
-        <main class="theme-panel">             
-            <header class="theme-header">                 
-                <button class="btn-back" type="button" data-acao="voltar" aria-label="Voltar">                     
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>                 
-                </button>                 
-                <strong class="titulo-cabecalho">Aparência e Tema</strong>             
-            </header>             
-            
-            <div class="theme-container">                 
-                
-                <!-- Pré-visualização Interativa -->
-                <div class="preview-box">
+        <nav class="side-nav" aria-label="Navegação principal">
+            <a href="inbox.html" class="nav-item nav-logo" title="Sinex Chat" aria-label="Sinex Chat: início"><span class="nav-logo-letra" aria-hidden="true">S</span></a>
+            <a href="inbox.html" class="nav-item" title="Mensagens" aria-label="Mensagens">
+                <span id="badgeGlobal" class="badge u-hidden" aria-hidden="true">0</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
+            </a>
+            <a href="explorar.html" class="nav-item" title="Pesquisar" aria-label="Pesquisar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg></a>
+            <a href="perfil.html" class="nav-item" title="Perfil" aria-label="Seu perfil"><img id="navAvatar" class="nav-avatar-icon" src="assets/avatar-padrao.svg" alt=""></a>
+            <a href="configuracoes.html" class="nav-item nav-item-final active" title="Mais" aria-label="Configurações" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="5" x2="21" y2="5"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="19" x2="21" y2="19"></line></svg></a>
+        </nav>
+
+        <main class="theme-panel">
+            <header class="theme-header cabecalho-pagina">
+                <button class="btn-back" type="button" data-acao="voltar" aria-label="Voltar">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                </button>
+                <h1 class="titulo-cabecalho">Aparência e tema</h1>
+            </header>
+
+            <div class="theme-container">
+
+                <!-- Pré-visualização: acompanha o tema escolhido na hora -->
+                <div class="preview-box" aria-hidden="true">
+                    <div class="preview-topo">
+                        <span class="preview-avatar">M</span>
+                        <span class="preview-nome">Marina<small>online</small></span>
+                    </div>
                     <div class="preview-bubble pb-other">E aí, as atualizações ficaram boas?</div>
                     <div class="preview-bubble pb-mine">Ficaram sensacionais! O chat tá muito rápido! 🚀</div>
                 </div>
 
-                <!-- Opções de Tema -->
-                <div class="settings-group">
-                    <div id="btnClaro" class="settings-item" role="button" tabindex="0">
-                        <div class="item-left">
-                            <span class="item-icon">☀️</span>
-                            <span class="item-text">Modo Claro</span>
-                        </div>
-                        <svg class="check-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                <section class="settings-secao" aria-labelledby="tituloTema">
+                    <h2 id="tituloTema" class="settings-secao-titulo">Tema</h2>
+                    <div class="tema-opcoes" role="radiogroup" aria-labelledby="tituloTema">
+                        <button id="btnAutomatico" type="button" class="tema-opcao" role="radio" aria-checked="false" data-tema="auto">
+                            <span class="tema-amostra tema-amostra-auto" aria-hidden="true">
+                                <span class="amostra-bolha amostra-outra"></span>
+                                <span class="amostra-bolha amostra-minha"></span>
+                            </span>
+                            <span class="tema-rotulo"><span class="tema-radio" aria-hidden="true"></span>Automático</span>
+                        </button>
+                        <button id="btnClaro" type="button" class="tema-opcao" role="radio" aria-checked="false" data-tema="claro">
+                            <span class="tema-amostra tema-amostra-claro" aria-hidden="true">
+                                <span class="amostra-bolha amostra-outra"></span>
+                                <span class="amostra-bolha amostra-minha"></span>
+                            </span>
+                            <span class="tema-rotulo"><span class="tema-radio" aria-hidden="true"></span>Claro</span>
+                        </button>
+                        <button id="btnEscuro" type="button" class="tema-opcao" role="radio" aria-checked="false" data-tema="escuro">
+                            <span class="tema-amostra tema-amostra-escuro" aria-hidden="true">
+                                <span class="amostra-bolha amostra-outra"></span>
+                                <span class="amostra-bolha amostra-minha"></span>
+                            </span>
+                            <span class="tema-rotulo"><span class="tema-radio" aria-hidden="true"></span>Escuro</span>
+                        </button>
                     </div>
-                    
-                    <div class="settings-divider"></div>
-                    
-                    <div id="btnEscuro" class="settings-item" role="button" tabindex="0">
-                        <div class="item-left">
-                            <span class="item-icon">🌙</span>
-                            <span class="item-text">Modo Escuro</span>
-                        </div>
-                        <svg class="check-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                    </div>
-                </div>
-            </div>         
-        </main>     
-    </div>     
-    
-    <div id="toast-aviso">Alerta!</div>     
+                    <p class="tema-ajuda">No automático, o Sinex acompanha o tema do seu celular ou computador — e muda sozinho quando ele muda.</p>
+                </section>
+            </div>
+        </main>
+    </div>
 
-<!-- Script de Tempo Real -->
     <script type="module" src="radar.js"></script>
     <script type="module" src="configuracoes-tema.js"></script>
-</body> 
+</body>
 </html>

@@ -146,6 +146,7 @@ func (i *Identity) usernameDoUID(ctx context.Context, tok *auth.Token) (string, 
 			i.esquecer(tok.UID)
 			return "", ErrContaBloqueada
 		}
+		i.completarStatus(doc)
 		return emCache.username, nil
 	}
 
@@ -187,6 +188,7 @@ func (i *Identity) usernameDoUID(ctx context.Context, tok *auth.Token) (string, 
 	if contaBloqueada(doc.Data()) {
 		return "", ErrContaBloqueada
 	}
+	i.completarStatus(doc)
 
 	username := doc.Ref.ID
 	if u, ok := doc.Data()["usuario"].(string); ok && u != "" {
@@ -205,6 +207,36 @@ func (i *Identity) usernameDoUID(ctx context.Context, tok *auth.Token) (string, 
 	return username, nil
 }
 
+// completarStatus grava status "ativo" em perfis que ainda não têm o campo.
+//
+// As regras do Firestore publicadas em 17/09/2026 comparam
+// request.resource.data.status com resource.data.status na edição do perfil.
+// Num documento sem "status" essa leitura é erro, e erro nas regras é recusa:
+// quem se cadastrou pelo app (o cadastro não grava status) não conseguia
+// salvar nome, bio nem foto. Com o campo presente a comparação passa, e o
+// comportamento é o mesmo com as regras novas do repositório.
+//
+// A pré-condição de última alteração impede de desfazer um banimento feito
+// entre a leitura e esta escrita: se o documento mudou, a escrita é recusada
+// e a próxima conexão tenta de novo. Roda em segundo plano — falha aqui não
+// impede o login.
+func (i *Identity) completarStatus(doc *firestore.DocumentSnapshot) {
+	if doc == nil || !doc.Exists() {
+		return
+	}
+	if _, tem := doc.Data()["status"]; tem {
+		return
+	}
+	go func(ref *firestore.DocumentRef, versao time.Time) {
+		c, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err := ref.Update(c, []firestore.Update{{Path: "status", Value: "ativo"}}, firestore.LastUpdateTime(versao))
+		if err != nil {
+			log.Printf("[identity] falha ao completar o status de %s: %v", ref.ID, err)
+		}
+	}(doc.Ref, doc.UpdateTime)
+}
+
 // contaBloqueada diz se o perfil está suspenso ou banido.
 func contaBloqueada(dados map[string]interface{}) bool {
 	status, _ := dados["status"].(string)
@@ -220,9 +252,14 @@ func (i *Identity) esquecer(uid string) {
 }
 
 // RegistrarSaida grava o lastSeen no Firestore quando a última aba do usuário
-// desconecta. É isto que substitui a escrita de 1 minuto em 1 minuto que o
-// cliente fazia — agora só há uma escrita por sessão encerrada.
-func (i *Identity) RegistrarSaida(username string) {
+// desconecta de vez (depois da folga de presença do hub). É isto que substitui
+// a escrita de 1 minuto em 1 minuto que o cliente fazia — agora só há uma
+// escrita por sessão encerrada.
+//
+// quando é o instante em que a última aba caiu, e não o de agora: a gravação
+// acontece alguns segundos depois, e é o primeiro que a pessoa vê como
+// "visto por último".
+func (i *Identity) RegistrarSaida(username string, quando int64) {
 	if i == nil || i.fsClient == nil {
 		return
 	}
@@ -231,12 +268,50 @@ func (i *Identity) RegistrarSaida(username string) {
 		defer cancel()
 
 		_, err := i.fsClient.Collection("usuarios").Doc(username).Update(ctx, []firestore.Update{
-			{Path: "lastSeen", Value: time.Now().UnixMilli()},
+			{Path: "lastSeen", Value: quando},
 		})
 		if err != nil {
 			log.Printf("[presenca] falha ao gravar lastSeen de %s: %v", username, err)
 		}
 	}()
+}
+
+// RegistrarSaidas grava o lastSeen de vários usuários de uma vez e espera
+// terminar. Usado no desligamento do servidor, quando não dá para deixar
+// goroutines soltas.
+func (i *Identity) RegistrarSaidas(ctx context.Context, saidas map[string]int64) error {
+	if i == nil || i.fsClient == nil || len(saidas) == 0 {
+		return nil
+	}
+
+	// Uma escrita por perfil, e não um lote: um lote é tudo-ou-nada, e um
+	// único perfil apagado no meio faria ninguém ter o lastSeen gravado.
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		primeiro error
+		semaforo = make(chan struct{}, 16)
+	)
+	for nome, quando := range saidas {
+		wg.Add(1)
+		semaforo <- struct{}{}
+		go func(nome string, quando int64) {
+			defer wg.Done()
+			defer func() { <-semaforo }()
+			_, err := i.fsClient.Collection("usuarios").Doc(nome).Update(ctx, []firestore.Update{
+				{Path: "lastSeen", Value: quando},
+			})
+			if err != nil {
+				mu.Lock()
+				if primeiro == nil {
+					primeiro = err
+				}
+				mu.Unlock()
+			}
+		}(nome, quando)
+	}
+	wg.Wait()
+	return primeiro
 }
 
 // UltimoAcesso lê o lastSeen persistido para responder a um status_check de um

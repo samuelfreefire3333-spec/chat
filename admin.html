@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     
-<link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css">
     <script src="tema.js"></script>
-<title>Admin - Sinex Chat</title>
+    <title>Admin - Sinex Chat</title>
     <link rel="manifest" href="manifest.json">
     
     <link rel="stylesheet" href="admin.css">
@@ -14,53 +14,65 @@
 <body>
     <div class="app-layout">
         <!-- NAVEGAÇÃO LATERAL -->
-        <nav class="side-nav">
-            <a href="inbox.html" class="nav-item" title="Página Inicial"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9.005 16.545a2.997 2.997 0 0 1 2.997-2.997A2.997 2.997 0 0 1 15 16.545V22h7V11.543L12 2 2 11.543V22h7v-5.455Z"></path></svg></a>
-            <a href="explorar.html" class="nav-item" title="Pesquisa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg></a>
-            <a href="inbox.html" class="nav-item" title="Mensagens">
-                <div id="badgeGlobal" class="badge u-hidden">0</div>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
+        <nav class="side-nav" aria-label="Navegação principal">
+            <a href="inbox.html" class="nav-item nav-logo" title="Sinex Chat" aria-label="Sinex Chat: início"><span class="nav-logo-letra" aria-hidden="true">S</span></a>
+            <a href="inbox.html" class="nav-item" title="Mensagens" aria-label="Mensagens">
+                <span id="badgeGlobal" class="badge u-hidden" aria-hidden="true">0</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg>
             </a>
-            <a href="perfil.html" class="nav-item" title="Perfil"><img id="navAvatar" src="https://cdn-icons-png.flaticon.com/512/149/149071.png" alt="Avatar"></a>
-            
-            <a href="configuracoes.html" class="nav-item active nav-item-final" title="Mais">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="4" x2="21" y2="4"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="20" x2="21" y2="20"></line></svg>
-            </a>
+            <a href="explorar.html" class="nav-item" title="Pesquisar" aria-label="Pesquisar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M19 10.5A8.5 8.5 0 1 1 10.5 2a8.5 8.5 0 0 1 8.5 8.5Z"></path><line x1="16.511" y1="16.511" x2="22" y2="22"></line></svg></a>
+            <a href="perfil.html" class="nav-item" title="Perfil" aria-label="Seu perfil"><img id="navAvatar" class="nav-avatar-icon" src="assets/avatar-padrao.svg" alt=""></a>
+            <a href="configuracoes.html" class="nav-item nav-item-final active" title="Mais" aria-label="Configurações" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="5" x2="21" y2="5"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="19" x2="21" y2="19"></line></svg></a>
         </nav>
 
-        <main class="admin-panel u-hidden" id="mainAdmin">
-            <header class="admin-header">
+        <main class="admin-panel" id="mainAdmin">
+            <header class="admin-header cabecalho-pagina">
                 <button class="btn-back" type="button" data-acao="voltar" aria-label="Voltar">
-                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
                 </button>
-                <strong class="titulo-cabecalho">Centro de Comando</strong>
+                <h1 class="titulo-cabecalho">Centro de Comando</h1>
             </header>
-            
-            <div class="admin-content">
+
+            <!-- Enquanto confirma a permissão (a regra do Firestore é quem manda) -->
+            <div id="verificandoAdmin" class="admin-verificando" role="status">
+                <span class="admin-giro" aria-hidden="true"></span>
+                Verificando permissões...
+            </div>
+
+            <div id="conteudoAdmin" class="admin-content u-hidden">
                 <div class="stats-grid">
                     <div class="stat-card">
-                        <div id="totalUsuarios" class="stat-value">...</div>
-                        <div class="stat-label">Usuários Cadastrados</div>
+                        <span class="stat-icone" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></span>
+                        <div id="totalUsuarios" class="stat-value"><span class="skeleton skeleton-texto"></span></div>
+                        <div class="stat-label">Usuários cadastrados</div>
                     </div>
                     <div class="stat-card stat-card-verde">
-                        <div id="totalChats" class="stat-value">...</div>
-                        <div class="stat-label">Conversas Ativas</div>
+                        <span class="stat-icone" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M22 11.928c0-3.66-3.08-6.66-6.88-6.66H8.88C5.08 5.268 2 8.268 2 11.928c0 3.66 3.08 6.66 6.88 6.66h.273l3.655 3.32a.75.75 0 0 0 1.25-.563v-2.757h1.062c3.8 0 6.88-3 6.88-6.66Z"></path></svg></span>
+                        <div id="totalChats" class="stat-value"><span class="skeleton skeleton-texto"></span></div>
+                        <div class="stat-label">Conversas ativas</div>
                     </div>
                 </div>
 
-                <div class="section-title">Gerenciar Usuários</div>
-                <input type="text" id="inputBuscaAdmin" class="search-admin" placeholder="Pesquisar usuário para bloquear...">
-                
-                <div id="listaAdmin" class="admin-list">
+                <div class="section-title">
+                    <h2>Gerenciar usuários</h2>
+                    <span id="contagemListaAdmin" class="admin-contagem"></span>
+                </div>
+                <div class="search-box admin-busca">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="search" id="inputBuscaAdmin" class="search-admin" placeholder="Pesquisar por nome ou @usuário" aria-label="Pesquisar usuário" autocomplete="off" autocapitalize="none" spellcheck="false">
+                </div>
+
+                <div id="listaAdmin" class="admin-list" aria-live="polite">
                     <p class="admin-carregando">Carregando usuários do sistema...</p>
                 </div>
+                <p id="semResultadoAdmin" class="lista-vazia u-hidden" role="status"></p>
+                <button id="btnCarregarMais" class="btn-secundario btn-pequeno admin-mais u-hidden" type="button">Carregar mais</button>
             </div>
         </main>
     </div>
 
-    <div id="toast-aviso">Alerta!</div>
 
-<script type="module" src="radar.js"></script>
+    <script type="module" src="radar.js"></script>
     <script type="module" src="admin.js"></script>
 </body>
 </html>

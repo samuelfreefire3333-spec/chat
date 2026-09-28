@@ -1,32 +1,27 @@
-<!DOCTYPE html> 
-<html lang="pt-BR"> 
-<head>     
-    <meta charset="UTF-8">     
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">          
-    
-<!-- 👑 CONECTANDO AO SEU CSS MESTRE -->
-    <link rel="stylesheet" href="style.css">
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 
+    <link rel="stylesheet" href="style.css">
     <script src="tema.js"></script>
-<title>Aviso - Sinex Chat</title>
-    <link rel="manifest" href="manifest.json">          
-    
-    <!-- ESTILOS EXCLUSIVOS DA TELA DE AVISO -->
+    <title>Aviso - Sinex Chat</title>
+    <link rel="manifest" href="manifest.json">
+
     <link rel="stylesheet" href="aviso.css">
- 
-</head> 
-<body>     
-    <div class="aviso-wrapper">
-        <div class="aviso-box">
-            <!-- Role dinâmico para acessibilidade -->
-            <div id="avisoIcon" class="aviso-icon" role="img" aria-label="Atenção">⚠️</div>
-            <h1 id="avisoTitulo" class="aviso-titulo">Aviso Importante</h1>
+</head>
+<body>
+    <main class="aviso-wrapper">
+        <div id="avisoCaixa" class="aviso-box" data-tipo="alerta">
+            <div id="avisoIcon" class="aviso-icon" role="img" aria-label="Atenção"></div>
+            <h1 id="avisoTitulo" class="aviso-titulo">Aviso importante</h1>
             <p id="avisoMensagem" class="aviso-mensagem">Esta é uma mensagem do sistema. Houve uma atualização ou requerimento necessário.</p>
 
             <button id="btnFecharAviso" class="btn-action" type="button">Entendi</button>
         </div>
-    </div>
+    </main>
 
     <script type="module" src="aviso.js"></script>
-</body> 
+</body>
 </html>

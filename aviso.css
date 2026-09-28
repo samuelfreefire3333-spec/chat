@@ -1,77 +1,88 @@
+/* =========================================================
+   ⚠️ SINEX CHAT — AVISO DO SISTEMA
+========================================================= */
+
 .aviso-wrapper {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            width: 100vw;
-            height: 100dvh;
-            background: var(--bg-main);
-            padding: 20px;
-        }
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100dvh;
+    overflow-y: auto;
+    padding: var(--space-5);
+    background:
+        radial-gradient(ellipse 70% 45% at 50% 0%, rgba(var(--accent-rgb), .12), transparent 70%),
+        var(--bg-main);
+}
 
-        .aviso-box {
-            width: 100%;
-            max-width: 420px;
-            background: var(--bg-panel-2);
-            padding: 45px 30px;
-            border-radius: 24px;
-            border: 1px solid var(--border-color);
-            box-shadow: var(--shadow-soft);
-            text-align: center;
-            animation: popIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-        }
+.aviso-box {
+    width: 100%;
+    max-width: 420px;
+    margin: auto;
+    padding: var(--space-10) var(--space-8) var(--space-8);
+    background: var(--bg-panel-2);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-soft);
+    text-align: center;
+    animation: aviso-entrar var(--dur-slower) var(--ease-emphasized);
+}
+@keyframes aviso-entrar {
+    from { opacity: 0; transform: scale(0.96) translateY(12px); }
+    to { opacity: 1; transform: none; }
+}
 
-        @keyframes popIn {
-            from { opacity: 0; transform: scale(0.95) translateY(15px); }
-            to { opacity: 1; transform: scale(1) translateY(0); }
-        }
+.aviso-icon {
+    width: 76px;
+    height: 76px;
+    margin: 0 auto var(--space-5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--warning-text);
+    background: rgba(224, 168, 0, .12);
+    box-shadow: 0 0 0 8px rgba(224, 168, 0, .06);
+    animation: aviso-pulso 2.4s ease-in-out infinite;
+}
+[data-tipo="erro"] .aviso-icon { color: var(--danger-text); background: rgba(var(--accent-rgb), .12); box-shadow: 0 0 0 8px rgba(var(--accent-rgb), .06); }
+[data-tipo="sucesso"] .aviso-icon { color: var(--success-text); background: rgba(var(--success-rgb), .12); box-shadow: 0 0 0 8px rgba(var(--success-rgb), .06); }
+[data-tipo="info"] .aviso-icon { color: var(--text-main); background: var(--bg-hover); box-shadow: 0 0 0 8px var(--esqueleto); }
+@keyframes aviso-pulso {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
 
-        .aviso-icon {
-            font-size: 64px;
-            margin-bottom: 20px;
-            animation: pulse-icon 2s infinite ease-in-out;
-            display: inline-block;
-        }
+.aviso-titulo {
+    margin-bottom: var(--space-3);
+    font-size: var(--fs-3xl);
+    font-weight: var(--fw-heavy);
+    letter-spacing: -0.5px;
+    color: var(--text-main);
+}
+.aviso-mensagem {
+    margin-bottom: var(--space-8);
+    font-size: var(--fs-lg);
+    line-height: var(--lh-normal);
+    color: var(--text-sec);
+}
 
-        @keyframes pulse-icon {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-        }
-        
-        .aviso-titulo {
-            color: var(--text-main);
-            font-size: 24px;
-            font-weight: 800;
-            margin-bottom: 12px;
-            letter-spacing: -0.5px;
-        }
+.btn-action {
+    width: 100%;
+    min-height: 50px;
+    padding: var(--space-3) var(--space-4);
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--primary-accent);
+    color: var(--text-on-color);
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+    box-shadow: var(--primary-glow);
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-standard), box-shadow var(--dur-base) var(--ease-standard), transform var(--dur-instant) var(--ease-standard);
+}
+.btn-action:hover { background: var(--primary-accent-2); box-shadow: 0 8px 25px rgba(var(--accent-rgb), 0.35); }
+.btn-action:active { transform: scale(0.98); }
 
-        .aviso-mensagem {
-            color: var(--text-sec);
-            font-size: 15px;
-            line-height: 1.6;
-            margin-bottom: 35px;
-        }
-
-        .btn-action {
-            width: 100%;
-            background: var(--primary-accent);
-            color: white;
-            border: none;
-            padding: 16px;
-            border-radius: 14px;
-            font-size: 16px;
-            font-weight: 700;
-            cursor: pointer;
-            transition: 0.2s;
-            box-shadow: var(--primary-glow);
-        }
-        
-        .btn-action:hover {
-            background: var(--primary-accent-2);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(230, 0, 43, 0.35);
-        }
-        
-        .btn-action:active {
-            transform: scale(0.97);
-        }
+@media (max-width: 480px) {
+    .aviso-box { padding: var(--space-8) var(--space-5) var(--space-6); }
+}

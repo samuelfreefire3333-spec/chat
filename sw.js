@@ -3,7 +3,7 @@
 // Suba este número a cada publicação. Sem isso — e sem o handler de activate
 // que existia antes — o cache antigo nunca era removido e quem já tinha
 // instalado o app continuava com o HTML velho até limpar os dados do site.
-const VERSAO = "v6";
+const VERSAO = "v9";
 const CACHE_ESTATICO = `sinex-estatico-${VERSAO}`;
 
 const ARQUIVOS = [
@@ -39,6 +39,7 @@ const ARQUIVOS = [
   "/foto.css",
   "/aviso.css",
   "/grupo-novo.css",
+  "/index.css",
 
   // Módulos compartilhados
   "/tema.js",
@@ -67,6 +68,10 @@ const ARQUIVOS = [
   "/manifest.json",
   "/assets/icone-192.png",
   "/assets/icone-512.png",
+  "/assets/icone-maskable-512.png",
+  "/assets/apple-touch-icon.png",
+  "/assets/avatar-padrao.svg",
+  "/assets/avatar-grupo.svg",
   "/assets/notificacao.wav",
   "/assets/toque.wav",
 ];
