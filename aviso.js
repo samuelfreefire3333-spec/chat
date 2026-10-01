@@ -9,21 +9,33 @@ const ICONES = {
 };
 const ALERTA = { cor: "alerta", rotulo: "Atenção", svg: '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>' };
 
-const params = new URLSearchParams(window.location.search);
+// Mensagens conhecidas, escolhidas pelo código em ?c=.
+//
+// Antes o título e o texto vinham livres pela URL (?t=...&m=...): qualquer
+// pessoa montava um link do domínio oficial com o texto que quisesse ("Sua
+// conta será bloqueada, fale com o suporte em ..."). Não havia XSS (era
+// textContent), mas é exatamente o tipo de página que dá credibilidade a um
+// golpe. Agora a URL só escolhe uma mensagem desta lista.
+const MENSAGENS = {
+  "acesso-negado": { tipo: "error", titulo: "Acesso negado", texto: "Você não tem permissão para esta página." },
+};
 
-const titulo = params.get("t");
-const mensagem = params.get("m");
-const tipo = params.get("type");
-
-// textContent, e não innerHTML: o conteúdo vem da URL, que qualquer um
-// consegue montar. (O innerHTML abaixo só recebe os ícones fixos daqui.)
-if (titulo) {
-  document.getElementById("avisoTitulo").textContent = titulo;
-  document.title = `${titulo} - Sinex Chat`;
+function temChave(objeto, chave) {
+  return typeof chave === "string" && Object.prototype.hasOwnProperty.call(objeto, chave);
 }
-if (mensagem) document.getElementById("avisoMensagem").textContent = mensagem;
 
-const icone = ICONES[tipo] || ALERTA;
+const params = new URLSearchParams(window.location.search);
+const codigo = params.get("c");
+const escolhida = temChave(MENSAGENS, codigo) ? MENSAGENS[codigo] : null;
+
+if (escolhida) {
+  document.getElementById("avisoTitulo").textContent = escolhida.titulo;
+  document.getElementById("avisoMensagem").textContent = escolhida.texto;
+  document.title = `${escolhida.titulo} - Sinex Chat`;
+}
+
+// O innerHTML só recebe os ícones fixos deste arquivo.
+const icone = escolhida && temChave(ICONES, escolhida.tipo) ? ICONES[escolhida.tipo] : ALERTA;
 const iconeEl = document.getElementById("avisoIcon");
 iconeEl.innerHTML = icone.svg;
 iconeEl.setAttribute("aria-label", icone.rotulo);

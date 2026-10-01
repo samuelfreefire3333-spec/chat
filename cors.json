@@ -1,0 +1,12 @@
+[
+  {
+    "origin": [
+      "https://sinexchat.netlify.app",
+      "https://chat-parameuamor.web.app",
+      "https://chat-parameuamor.firebaseapp.com"
+    ],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Disposition"],
+    "maxAgeSeconds": 3600
+  }
+]

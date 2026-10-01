@@ -188,3 +188,26 @@
     .stat-card { padding: var(--space-3) var(--space-4); }
     .stat-value { font-size: var(--fs-3xl); }
 }
+
+/* Eventos de segurança (backend) */
+.admin-seguranca {
+    list-style: none;
+    margin: 0 0 var(--space-6);
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+.admin-seguranca li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2-5) var(--space-3-5);
+    border-top: 1px solid var(--border-color);
+    font-size: var(--fs-sm);
+    color: var(--text-sec);
+}
+.admin-seguranca li:first-child { border-top: none; }
+.admin-seguranca .evento-tipo { color: var(--text-main); font-weight: var(--fw-semibold); }
+.admin-seguranca .evento-hora { font-variant-numeric: tabular-nums; }
+.admin-seguranca .evento-vazio { justify-content: center; }

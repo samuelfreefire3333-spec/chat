@@ -1,7 +1,7 @@
 import { auth, db } from "./firebase.js";
 import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  collection, query, where, limit, getDocs, doc, getDoc
+  collection, query, where, limit, getDocs, doc, getDoc, terminate, clearIndexedDbPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // Avatar local: o anterior vinha de um site de ícones de terceiros, e bastava
@@ -45,10 +45,13 @@ async function carregarPerfil(uid) {
   if (!email) return null;
 
   const porEmail = await getDocs(
-    query(collection(db, "usuarios"), where("email", "==", email), limit(1))
+    query(collection(db, "usuarios"), where("email", "==", email), limit(5))
   );
-  if (porEmail.empty) return null;
-  return { id: porEmail.docs[0].id, ...porEmail.docs[0].data() };
+  // Só um perfil SEM dono pode ser desta conta. Um perfil com uid de outra
+  // conta e o mesmo e-mail é de outra pessoa — nunca "vira" esta sessão.
+  const semDono = porEmail.docs.find((d) => !d.data().uid);
+  if (!semDono) return null;
+  return { id: semDono.id, ...semDono.data() };
 }
 
 // Preferências do aparelho (não da conta): sobrevivem ao sair da conta.
@@ -114,6 +117,40 @@ export function encerrarSessao() {
 }
 
 /**
+ * Apaga a cópia offline das conversas guardada neste navegador.
+ *
+ * O Firestore roda com cache persistente (IndexedDB) para o app abrir sem
+ * rede. Esse cache fica no aparelho mesmo depois de sair da conta — num
+ * computador compartilhado, a próxima pessoa conseguia ler as mensagens pelo
+ * DevTools. Sair agora apaga essa cópia.
+ *
+ * O Firestore só deixa apagar com ele parado nesta aba e sem outra aba do app
+ * aberta. Por isso:
+ *   - ao sair, encerrar=true para o Firestore desta aba (a página muda logo
+ *     em seguida para o login);
+ *   - a tela de login tenta de novo sem encerrar (lá o Firestore ainda não
+ *     começou), o que cobre a sessão que caiu por expiração ou por "sair de
+ *     todos os aparelhos" em outro lugar.
+ * Devolve false quando não deu (outra aba aberta); nunca lança.
+ */
+export function apagarCopiaOffline({ encerrar = false } = {}) {
+  const tentativa = (async () => {
+    try {
+      if (encerrar) await terminate(db);
+      await clearIndexedDbPersistence(db);
+      return true;
+    } catch (erro) {
+      console.warn("A cópia offline das conversas não pôde ser apagada agora:", erro?.code || erro);
+      return false;
+    }
+  })();
+  // O IndexedDB espera as outras abas soltarem o banco; login e logout não
+  // podem ficar presos esperando por isso.
+  const limite = new Promise((resolve) => setTimeout(() => resolve(false), 4000));
+  return Promise.race([tentativa, limite]);
+}
+
+/**
  * Atualiza o perfil já resolvido nesta aba, sem uma nova ida ao Firestore.
  * Sem isto, salvar nome ou foto só aparecia depois de recarregar a página,
  * porque a promessa de sessão fica em cache no módulo.
@@ -150,18 +187,31 @@ export function escaparTexto(texto) {
  * URLs assinadas do Firebase Storage (era o bug da foto de perfil). Aqui o que
  * se faz é recusar esquemas perigosos e devolver a URL intacta.
  */
+// Hosts de onde o app aceita carregar imagem e áudio. É o mesmo conjunto que a
+// CSP (netlify.toml) libera; o que estiver fora cai no avatar padrão em vez de
+// virar uma imagem quebrada (ou um rastreador de quem abriu o perfil).
+const HOSTS_DE_MIDIA = ["firebasestorage.googleapis.com"];
+const SUFIXOS_DE_MIDIA = [".firebasestorage.app"];
+
 export function urlSegura(url, alternativa = AVATAR_PADRAO) {
   if (typeof url !== "string" || !url.trim()) return alternativa;
 
   try {
     const parsed = new URL(url, window.location.origin);
-    const esquemasOk = ["http:", "https:", "blob:"];
-    if (esquemasOk.includes(parsed.protocol)) return url;
-    // data: só para imagem, nunca data:text/html.
-    if (parsed.protocol === "data:" && /^data:image\//i.test(url)) return url;
+    // Arquivos do próprio app (avatar padrão, ícones).
+    if (parsed.origin === window.location.origin && (parsed.protocol === "https:" || parsed.protocol === "http:")) return parsed.href;
+    // URL blob: criada nesta aba (mídia privada já baixada e conferida).
+    if (parsed.protocol === "blob:" && url.startsWith(`blob:${window.location.origin}/`)) return url;
+    if (parsed.protocol === "https:"
+      && (HOSTS_DE_MIDIA.includes(parsed.hostname) || SUFIXOS_DE_MIDIA.some((s) => parsed.hostname.endsWith(s)))) {
+      return url;
+    }
+    // data: só para imagem rasterizada — nunca data:text/html nem SVG.
+    if (parsed.protocol === "data:" && /^data:image\/(png|jpeg|gif|webp);base64,/i.test(url)) return url;
   } catch (_) { /* URL malformada */ }
 
-  console.warn("URL bloqueada por segurança:", url);
+  // O avatar padrão antigo vinha de um site de ícones de terceiros.
+  if (!/cdn-icons-png\.flaticon\.com/.test(url)) console.warn("URL bloqueada por segurança.");
   return alternativa;
 }
 
@@ -587,6 +637,7 @@ const Core = {
   definirAvatar,
   montarAvatarNav,
   atualizarPerfilEmCache,
+  apagarCopiaOffline,
   mostrar,
   esconder,
   copiarTexto,

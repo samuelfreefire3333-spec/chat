@@ -1131,3 +1131,75 @@
     transition: none !important;
   }
 }
+
+/* =========================================================
+   🔒 PROTEÇÃO DE PONTA A PONTA E MÍDIA PRIVADA
+========================================================= */
+.btn-protecao.ativa { color: var(--success-text); }
+.btn-protecao.alerta { color: var(--warning-text); }
+
+.faixa-protecao {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(var(--success-rgb), 0.08);
+  color: var(--success-text);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  text-align: center;
+  cursor: pointer;
+}
+.faixa-protecao:focus-visible { outline: 2px solid var(--success-text); outline-offset: -2px; }
+.faixa-protecao[data-estado="alerta"] {
+  background: rgba(224, 168, 0, 0.12);
+  color: var(--warning-text);
+}
+
+.numero-seguranca {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  justify-content: center;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-hover);
+  color: var(--text-main);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--fs-lg);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  user-select: all;
+}
+.dialogo-protecao { text-align: left; max-width: 420px; }
+.dialogo-protecao .modal-titulo { text-align: center; }
+.dialogo-protecao .modal-confirmacao p,
+.dialogo-protecao p { margin-bottom: var(--space-4); }
+.dialogo-protecao .modal-acoes { flex-wrap: wrap; }
+.dialogo-protecao .selo-verificado { color: var(--success-text); font-weight: var(--fw-bold); }
+.dialogo-protecao .selo-alerta { color: var(--warning-text); font-weight: var(--fw-bold); }
+
+.msg-imagem.carregando {
+  width: 220px;
+  height: 160px;
+  background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.14), rgba(255,255,255,.06));
+  background-size: 200% 100%;
+  animation: brilho-midia 1.2s linear infinite;
+  cursor: progress;
+}
+@keyframes brilho-midia { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .msg-imagem.carregando { animation: none; } }
+
+.msg-midia-indisponivel,
+.msg-cifrada-status {
+  display: block;
+  padding: var(--space-2) var(--space-1);
+  font-size: var(--fs-sm);
+  font-style: italic;
+  opacity: 0.8;
+}

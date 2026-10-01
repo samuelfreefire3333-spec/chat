@@ -1,16 +1,23 @@
-import { storage } from "./firebase.js";
-import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import Core, {
   sessao, urlSegura, definirAvatar, horaCurta, vistoPorUltimo, paraMillis,
   buscarPerfilPorUsername, idDoChat, AVATAR_PADRAO, AVATAR_GRUPO, montarAvatarNav, mostrar
 } from "./core.js";
 import Radar, { zerarNotificacoes } from "./radar.js";
-import { abrirJanelaDeChamada, lerEstadoDaChamada, voltarParaAChamada } from "./chamada-flutuante.js";
+import {
+  abrirJanelaDeChamada, lerEstadoDaChamada, voltarParaAChamada, registrarIntencaoDeChamada,
+} from "./chamada-flutuante.js";
 import {
   escutarMensagens, escutarChat, enviarMensagem, enviarMensagemNoGrupo, garantirChat,
   obterChat, reagirMensagem, resumo, carregarMensagensAntigas, TAMANHO_PAGINA_HISTORICO,
   marcarRecibos, estadoDoRecibo, quantosLeram, LIMITE_HISTORICO
 } from "./mensagens.js";
+import {
+  prepararImagem, prepararAudio, enviarMidia, enviarMidiaCifrada, urlDaMidia, ErroDeMidia,
+} from "./midia.js";
+import {
+  garantirAparelho, ativarProtecao, cifrarParaConversa, decifrarDaConversa, numeroDaConversa,
+  estadoDoContato, marcarVerificado, aceitarChavesAtuais, ErroE2EE,
+} from "./e2ee.js";
 
 const params = new URLSearchParams(window.location.search);
 const outroUsuario = (params.get("u") || "").toLowerCase().trim();
@@ -107,6 +114,69 @@ function nomeDeExibicao(username) {
   return nomesConhecidos.get(username) || username;
 }
 
+// --------------------------------------------------------------------------
+// Conversa protegida (ponta a ponta)
+// --------------------------------------------------------------------------
+// O conteúdo aberto fica só na memória desta aba. Nada disso vai para o
+// localStorage nem para o servidor.
+const conteudosDecifrados = new Map(); // id da mensagem -> conteúdo validado
+const falhasDeDecifragem = new Map();  // id da mensagem -> texto do aviso
+
+function conversaProtegida() {
+  return !modoGrupo && !!chatDoc?.e2ee?.ativo;
+}
+
+/** O que a mensagem mostra: para a protegida, o conteúdo já aberto. */
+function dadosVisiveis(msg) {
+  if (msg.tipo !== "cifrada") return { tipo: msg.tipo, texto: msg.texto || "" };
+  const c = conteudosDecifrados.get(msg.id);
+  if (!c) return null;
+  return { tipo: c.t, texto: c.t === "texto" ? c.x : "" };
+}
+
+// A primeira leitura do documento da conversa (é ele que diz se a conversa é
+// protegida). Enviar antes disso poderia mandar texto aberto numa conversa
+// protegida — as regras recusariam, mas a pessoa veria um erro à toa.
+let resolverChatPronto = null;
+const chatPronto = new Promise((resolve) => { resolverChatPronto = resolve; });
+
+async function aguardarDocumentoDaConversa() {
+  if (chatDoc) return chatDoc;
+  await Promise.race([chatPronto, new Promise((r) => setTimeout(r, 6000))]);
+  return chatDoc;
+}
+
+// Mídia só é baixada quando chega perto da tela (as 200 mensagens do
+// histórico não disparam 200 downloads de uma vez).
+const carregadoresDeMidia = new WeakMap();
+const observadorDeMidia = "IntersectionObserver" in window
+  ? new IntersectionObserver((entradas) => {
+    entradas.forEach((entrada) => {
+      if (!entrada.isIntersecting) return;
+      observadorDeMidia.unobserve(entrada.target);
+      const carregar = carregadoresDeMidia.get(entrada.target);
+      carregadoresDeMidia.delete(entrada.target);
+      carregar?.();
+    });
+  }, { root: elMensagens, rootMargin: "600px 0px" })
+  : null;
+
+function quandoVisivel(elemento, carregar) {
+  if (!observadorDeMidia) {
+    carregar();
+    return;
+  }
+  carregadoresDeMidia.set(elemento, carregar);
+  observadorDeMidia.observe(elemento);
+}
+
+function avisoDeMidia(texto) {
+  const aviso = document.createElement("span");
+  aviso.className = "msg-midia-indisponivel";
+  aviso.textContent = texto;
+  return aviso;
+}
+
 const ICONE_PLAY = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>';
 const ICONE_PAUSE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
 const REACOES_RAPIDAS = ["❤️", "😂", "😮", "😢", "👍", "🔥"];
@@ -127,9 +197,11 @@ const ROTULOS_RECIBO = { pendente: "Enviando", enviada: "Enviada", entregue: "En
 let respondendoA = null; // { id, autor, texto, tipo }
 
 function iniciarResposta(msg) {
-  respondendoA = { id: msg.id, autor: msg.remetente, texto: msg.texto, tipo: msg.tipo };
+  const visivel = dadosVisiveis(msg);
+  if (!visivel) return;
+  respondendoA = { id: msg.id, autor: msg.remetente, texto: visivel.texto, tipo: visivel.tipo };
   if (elRespostaAutor) elRespostaAutor.textContent = nomeDeExibicao(msg.remetente);
-  if (elRespostaTexto) elRespostaTexto.textContent = resumo(msg.tipo, msg.texto);
+  if (elRespostaTexto) elRespostaTexto.textContent = resumo(visivel.tipo, visivel.texto);
   if (elRespostaPreview) elRespostaPreview.classList.add("aberta");
   elTexto?.focus();
 }
@@ -192,6 +264,8 @@ const ICONE_COPIAR = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none
 
 function abrirMenuDeMensagem(ponto, msg, elementoBolha) {
   if (msg.tipo === "sistema") return;
+  const visivel = dadosVisiveis(msg);
+  if (!visivel) return; // protegida ainda fechada
   fecharMenuDeMensagem();
   menuAbertoEm = Date.now();
 
@@ -229,11 +303,11 @@ function abrirMenuDeMensagem(ponto, msg, elementoBolha) {
   // Copiar: a bolha tem user-select desligado no celular (senão o menu nativo
   // de "Copiar" abre por cima deste), então sem esta opção não havia nenhum
   // jeito de copiar o texto de uma mensagem pelo telefone.
-  if (msg.tipo === "texto" || !msg.tipo) {
+  if (visivel.tipo === "texto" || !visivel.tipo) {
     menu.appendChild(itemDeMenu("Copiar", ICONE_COPIAR, async () => {
       fecharMenuDeMensagem();
       try {
-        await navigator.clipboard.writeText(msg.texto || "");
+        await navigator.clipboard.writeText(visivel.texto || "");
         Core.aviso("Mensagem copiada.", "sucesso");
       } catch (_) {
         Core.aviso("Não foi possível copiar.", "erro");
@@ -427,18 +501,40 @@ function criarBolhaDeTexto(msg, souEu, agrupada) {
   return bolha;
 }
 
-function criarBolhaDeImagem(msg, souEu, agrupada) {
+/**
+ * Foto na conversa. Mensagem nova: arquivo privado (midia.caminho), baixado
+ * com login e conferido antes de exibir. Mensagem antiga: o link gravado no
+ * texto, até a migração. midiaCifrada: descritor aberto da conversa protegida.
+ */
+function criarBolhaDeImagem(msg, souEu, agrupada, midiaCifrada = null) {
   const bolha = document.createElement("div");
   bolha.className = souEu ? "msg-bubble msg-mine msg-midia" : "msg-bubble msg-other msg-midia";
   prepararCabecalhoDaBolha(bolha, msg, souEu, agrupada);
 
   const img = document.createElement("img");
-  img.src = urlSegura(msg.texto, "");
   img.alt = "Imagem enviada na conversa";
-  img.loading = "lazy";
   img.decoding = "async";
   img.className = "msg-imagem";
-  img.addEventListener("click", () => abrirImagem(img.src));
+
+  const midia = midiaCifrada || msg.midia;
+  if (midia?.caminho) {
+    img.classList.add("carregando");
+    const cifra = midiaCifrada ? { k: midiaCifrada.k, iv: midiaCifrada.iv } : null;
+    quandoVisivel(img, () => {
+      urlDaMidia(midia.caminho, "imagem", cifra, chatId)
+        .then((url) => {
+          img.src = url;
+          img.classList.remove("carregando");
+        })
+        .catch((err) => img.replaceWith(avisoDeMidia(err instanceof ErroDeMidia || err instanceof ErroE2EE ? `📷 ${err.message}` : "📷 Foto indisponível.")));
+    });
+  } else {
+    img.loading = "lazy";
+    img.src = urlSegura(msg.texto, "");
+  }
+  img.addEventListener("click", () => {
+    if (img.src && !img.classList.contains("carregando")) abrirImagem(img.src);
+  });
 
   bolha.appendChild(img);
   return bolha;
@@ -464,7 +560,7 @@ function abrirImagem(src) {
   abrirOriginal.href = src;
   abrirOriginal.target = "_blank";
   abrirOriginal.rel = "noopener";
-  abrirOriginal.textContent = "Abrir original";
+  abrirOriginal.textContent = src.startsWith("blob:") ? "Abrir em tamanho real" : "Abrir original";
   fundo.append(img, fechar, abrirOriginal);
   document.body.appendChild(fundo);
   requestAnimationFrame(() => fundo.classList.add("aberto"));
@@ -481,7 +577,7 @@ function abrirImagem(src) {
   fechar.focus();
 }
 
-function criarBolhaDeAudio(msg, souEu, agrupada) {
+function criarBolhaDeAudio(msg, souEu, agrupada, midiaCifrada = null) {
   const bolha = document.createElement("div");
   bolha.className = souEu ? "msg-bubble msg-mine msg-bolha-audio" : "msg-bubble msg-other msg-bolha-audio";
   prepararCabecalhoDaBolha(bolha, msg, souEu, agrupada);
@@ -490,8 +586,25 @@ function criarBolhaDeAudio(msg, souEu, agrupada) {
   player.className = "custom-audio-player";
 
   const audio = document.createElement("audio");
-  audio.src = urlSegura(msg.texto, "");
   audio.preload = "metadata";
+
+  // Áudio novo: arquivo privado, baixado quando o player chega perto da tela
+  // (ou no primeiro toque). Áudio antigo: o link gravado no texto.
+  const midia = midiaCifrada || msg.midia;
+  let carregamento = null;
+  const carregar = () => {
+    if (!midia?.caminho) return Promise.resolve();
+    if (!carregamento) {
+      const cifra = midiaCifrada ? { k: midiaCifrada.k, iv: midiaCifrada.iv } : null;
+      carregamento = urlDaMidia(midia.caminho, "audio", cifra, chatId).then((url) => { audio.src = url; });
+      carregamento.catch(() => {
+        btn.disabled = true;
+        duracao.textContent = "indisponível";
+      });
+    }
+    return carregamento;
+  };
+  if (!midia?.caminho) audio.src = urlSegura(msg.texto, "");
 
   const btn = document.createElement("button");
   btn.type = "button";
@@ -542,9 +655,11 @@ function criarBolhaDeAudio(msg, souEu, agrupada) {
 
   btn.addEventListener("click", () => {
     if (audio.paused) {
-      // Pausa qualquer outro áudio tocando na conversa.
-      elMensagens.querySelectorAll("audio").forEach((a) => { if (a !== audio) a.pause(); });
-      audio.play().catch(() => Core.aviso("Não foi possível reproduzir o áudio.", "erro"));
+      carregar().then(() => {
+        // Pausa qualquer outro áudio tocando na conversa.
+        elMensagens.querySelectorAll("audio").forEach((a) => { if (a !== audio) a.pause(); });
+        return audio.play();
+      }).catch(() => Core.aviso("Não foi possível reproduzir o áudio.", "erro"));
     } else {
       audio.pause();
     }
@@ -559,7 +674,61 @@ function criarBolhaDeAudio(msg, souEu, agrupada) {
 
   player.append(btn, barra, duracao, audio);
   bolha.appendChild(player);
+  if (midia?.caminho) quandoVisivel(player, () => { carregar().catch(() => {}); });
   return bolha;
+}
+
+/**
+ * Mensagem da conversa protegida. Aberta: vira a bolha normal do conteúdo.
+ * Ainda fechada: um aviso, e a abertura roda em segundo plano — quando
+ * termina, a mensagem é redesenhada.
+ */
+function criarBolhaCifrada(msg, souEu, agrupada) {
+  const conteudo = conteudosDecifrados.get(msg.id);
+  if (conteudo) {
+    const visivel = {
+      ...msg,
+      tipo: conteudo.t,
+      texto: conteudo.t === "texto" ? conteudo.x : "",
+      respostaAutor: conteudo.r?.a,
+      respostaTexto: conteudo.r?.x,
+      respostaTipo: conteudo.r?.t,
+    };
+    if (conteudo.t === "imagem") return criarBolhaDeImagem(visivel, souEu, agrupada, conteudo.m);
+    if (conteudo.t === "audio") return criarBolhaDeAudio(visivel, souEu, agrupada, conteudo.m);
+    return criarBolhaDeTexto(visivel, souEu, agrupada);
+  }
+
+  const bolha = document.createElement("div");
+  bolha.className = souEu ? "msg-bubble msg-mine" : "msg-bubble msg-other";
+  prepararCabecalhoDaBolha(bolha, msg, souEu, agrupada);
+  const status = document.createElement("span");
+  status.className = "msg-cifrada-status";
+  status.textContent = falhasDeDecifragem.get(msg.id) || "🔒 Abrindo mensagem protegida…";
+  bolha.appendChild(status);
+
+  if (!falhasDeDecifragem.has(msg.id) && !msg.pendente) {
+    decifrarDaConversa(sessaoAtual, chatId, msg)
+      .then((aberto) => conteudosDecifrados.set(msg.id, aberto))
+      .catch((err) => {
+        console.warn("Mensagem protegida não abriu:", err?.codigo || err);
+        falhasDeDecifragem.set(msg.id, err?.codigo === "sem-chave" || err?.codigo === "sem-aparelho"
+          ? "🔒 Esta mensagem foi protegida para outro aparelho."
+          : "🔒 Não foi possível abrir esta mensagem com segurança.");
+      })
+      .finally(agendarRedesenho);
+  }
+  return bolha;
+}
+
+let redesenhoAgendado = false;
+function agendarRedesenho() {
+  if (redesenhoAgendado) return;
+  redesenhoAgendado = true;
+  requestAnimationFrame(() => {
+    redesenhoAgendado = false;
+    redesenharComHistorico();
+  });
 }
 
 function criarMensagemDeSistema(msg) {
@@ -608,7 +777,8 @@ function renderizarMensagem(msg, souEu, agrupada = false, animar = false) {
   if (msg.tipo === "sistema") return criarMensagemDeSistema(msg);
 
   let bolha;
-  if (msg.tipo === "audio") bolha = criarBolhaDeAudio(msg, souEu, agrupada);
+  if (msg.tipo === "cifrada") bolha = criarBolhaCifrada(msg, souEu, agrupada);
+  else if (msg.tipo === "audio") bolha = criarBolhaDeAudio(msg, souEu, agrupada);
   else if (msg.tipo === "imagem") bolha = criarBolhaDeImagem(msg, souEu, agrupada);
   else bolha = criarBolhaDeTexto(msg, souEu, agrupada);
 
@@ -676,7 +846,8 @@ function assinaturaDe(msg) {
   const souEu = sessaoAtual && msg.remetenteUid === sessaoAtual.user.uid;
   return JSON.stringify([
     msg.texto, msg.tipo, msg.pendente, msg.timestampMs,
-    msg.reacoes, msg.respostaId, msg.respostaTexto,
+    msg.reacoes, msg.respostaId, msg.respostaTexto, msg.midia?.caminho || null,
+    msg.tipo === "cifrada" ? (conteudosDecifrados.has(msg.id) ? 1 : falhasDeDecifragem.has(msg.id) ? 2 : 0) : null,
     souEu && msg.tipo !== "sistema" ? reciboDe(msg) : null,
   ]);
 }
@@ -1348,12 +1519,40 @@ function atualizarBotoesDeEnvio() {
   btnEnviar?.setAttribute("title", gravando ? "Enviar áudio" : "Enviar");
 }
 
-/** Envia texto (do campo, se conteudo for null) ou mídia. Devolve se deu certo. */
-async function enviar(conteudo = null, tipo = "texto") {
+/**
+ * Grava a mensagem (direta ou em grupo) e avisa pelo WebSocket — o aviso não
+ * leva texto nenhum, só o chatId. Na conversa protegida, "protegido" é o
+ * conteúdo a cifrar; ele é cifrado AQUI, antes de sair do aparelho.
+ */
+async function publicar({ tipo = "texto", texto = "", midia = null, protegido = null, respondendoA: resposta = null }) {
+  let opcoes;
+  if (protegido) {
+    const envelope = await cifrarParaConversa(sessaoAtual, { id: chatId, uids: chatDoc?.uids || [] }, protegido);
+    opcoes = { tipo: "cifrada", e2ee: envelope, respondendoA: resposta?.id ? { id: resposta.id } : null };
+  } else {
+    opcoes = { tipo, texto, midia, respondendoA: resposta };
+  }
+
+  if (modoGrupo) await enviarMensagemNoGrupo(sessaoAtual, chatId, opcoes);
+  else await enviarMensagem(sessaoAtual, outroUsuario, opcoes);
+
+  const outrosParticipantes = modoGrupo
+    ? participantesDoGrupo.filter((u) => u !== sessaoAtual.username)
+    : [outroUsuario];
+  Radar.avisarMensagem(chatId, outrosParticipantes);
+}
+
+function mensagemDeFalha(err, padrao) {
+  if (err?.code === "permission-denied") return "Sem permissão para enviar nesta conversa.";
+  if (err instanceof ErroDeMidia || err instanceof ErroE2EE) return err.message;
+  return padrao;
+}
+
+/** Envia texto (do campo, se conteudo for null). Devolve se deu certo. */
+async function enviar(conteudo = null) {
   const texto = conteudo ?? elTexto.value.trim();
   if (!texto || !sessaoAtual || !chatId) return false;
 
-  // Mídia (áudio/imagem) não carrega o contexto de resposta — só texto.
   const respostaEnviada = conteudo === null ? respondendoA : null;
 
   if (conteudo === null) {
@@ -1365,19 +1564,20 @@ async function enviar(conteudo = null, tipo = "texto") {
   }
 
   try {
-    const opcoes = { texto, tipo, respondendoA: respostaEnviada };
-    if (modoGrupo) await enviarMensagemNoGrupo(sessaoAtual, chatId, opcoes);
-    else await enviarMensagem(sessaoAtual, outroUsuario, opcoes);
-
-    // O WebSocket serve para notificar na hora; o que aparece na tela vem do
-    // Firestore. Em grupo, avisamos cada participante individualmente.
-    const outrosParticipantes = modoGrupo
-      ? participantesDoGrupo.filter((u) => u !== sessaoAtual.username)
-      : [outroUsuario];
-
-    outrosParticipantes.forEach((usuario) => {
-      Radar.emit({ type: "chat", to: usuario, content: resumo(tipo, texto).slice(0, 120), payload: { chatId } });
-    });
+    await aguardarDocumentoDaConversa();
+    if (conversaProtegida()) {
+      const protegido = { t: "texto", x: texto };
+      if (respostaEnviada) {
+        protegido.r = {
+          a: respostaEnviada.autor,
+          x: resumo(respostaEnviada.tipo, respostaEnviada.texto).slice(0, 120),
+          t: respostaEnviada.tipo,
+        };
+      }
+      await publicar({ protegido, respondendoA: respostaEnviada });
+    } else {
+      await publicar({ tipo: "texto", texto, respondendoA: respostaEnviada });
+    }
 
     // Quem já começou a próxima mensagem continua "digitando" do outro lado:
     // o aviso "chat" desta aqui apaga o indicador lá e pode chegar depois do
@@ -1395,10 +1595,8 @@ async function enviar(conteudo = null, tipo = "texto") {
     }
     return true;
   } catch (err) {
-    console.error("Falha ao enviar:", err);
-    Core.aviso(err.code === "permission-denied"
-      ? "Sem permissão para enviar nesta conversa."
-      : (err.message || "Não foi possível enviar a mensagem."), "erro");
+    console.error("Falha ao enviar:", err?.code || err);
+    Core.aviso(mensagemDeFalha(err, "Não foi possível enviar a mensagem."), "erro");
     if (conteudo === null && !elTexto.value) {
       elTexto.value = texto;
       atualizarBotoesDeEnvio();
@@ -1411,6 +1609,22 @@ async function enviar(conteudo = null, tipo = "texto") {
       }
     }
     return false;
+  }
+}
+
+/**
+ * Sobe e envia uma foto ou um áudio já preparado (EXIF removido, tipo real
+ * conferido). Na conversa protegida o arquivo é cifrado antes de subir.
+ */
+async function enviarMidiaNaConversa(categoria, blob, mime, extras = {}) {
+  await aguardarDocumentoDaConversa();
+  const base = { chatId, uid: sessaoAtual.user.uid, blob, mime, extras };
+  if (conversaProtegida()) {
+    const descritor = await enviarMidiaCifrada(base);
+    await publicar({ protegido: { t: categoria, m: descritor } });
+  } else {
+    const midia = await enviarMidia(base);
+    await publicar({ tipo: categoria, midia });
   }
 }
 
@@ -1435,15 +1649,6 @@ function enviarDoCompositor() {
 // ==========================================================================
 // MÍDIA
 // ==========================================================================
-
-async function subirArquivo(pasta, arquivo, extensao) {
-  const caminho = `${pasta}/${sessaoAtual.user.uid}/${chatId}_${Date.now()}.${extensao}`;
-  const destino = ref(storage, caminho);
-  // Cada envio gera um nome de arquivo novo (Date.now()) — o conteúdo nunca
-  // é sobrescrito, então o CDN pode cachear "pra sempre".
-  await uploadBytes(destino, arquivo, { cacheControl: "public, max-age=31536000, immutable" });
-  return getDownloadURL(destino);
-}
 
 // Chip "Enviando foto…" acima da barra enquanto o arquivo sobe (antes eram
 // dois avisos na base da tela, um ao começar e outro ao terminar).
@@ -1477,9 +1682,10 @@ function pintarEnviosEmAndamento() {
 // Fotos: câmera, galeria (várias de uma vez), colar e arrastar
 // --------------------------------------------------------------------------
 
-const TAMANHO_MAXIMO_IMAGEM = 10 * 1024 * 1024;
+// A foto é reduzida (2048 px) e reprocessada antes de subir, então o arquivo
+// original pode ser maior que o teto do Storage (10 MB).
+const TAMANHO_MAXIMO_IMAGEM = 30 * 1024 * 1024;
 const LIMITE_IMAGENS_POR_VEZ = 10;
-const EXTENSAO_DA_IMAGEM = { "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/heic": "heic", "image/heif": "heif" };
 
 /** Confere tipo e tamanho; quando recusa, diz o motivo. */
 function imagemAceita(arquivo) {
@@ -1487,9 +1693,8 @@ function imagemAceita(arquivo) {
     Core.aviso("Só dá para enviar imagens por aqui.", "alerta");
     return false;
   }
-  // As regras do Storage aceitam "menos de 10 MB" (exatos 10 MB é recusado).
   if (arquivo.size >= TAMANHO_MAXIMO_IMAGEM) {
-    Core.aviso("A imagem precisa ter no máximo 10 MB.", "erro");
+    Core.aviso("A imagem é grande demais (máximo de 30 MB).", "erro");
     return false;
   }
   return true;
@@ -1505,14 +1710,16 @@ async function enviarImagens(arquivos) {
   const terminar = aceitas.map(() => comecarEnvio("imagem"));
   const falharam = [];
 
+  let motivo = "";
   for (let i = 0; i < aceitas.length; i++) {
     try {
-      // A extensão sai do tipo real do arquivo.
-      const extensao = EXTENSAO_DA_IMAGEM[aceitas[i].type] || "jpg";
-      const url = await subirArquivo("imagens", aceitas[i], extensao);
-      if (!(await enviar(url, "imagem"))) falharam.push(aceitas[i]);
+      // Redesenhada no navegador: sai sem EXIF/GPS e com o tipo conferido.
+      const { blob, mime, largura, altura } = await prepararImagem(aceitas[i]);
+      const extras = largura && altura ? { largura, altura } : {};
+      await enviarMidiaNaConversa("imagem", blob, mime, extras);
     } catch (err) {
-      console.error("Erro no upload da imagem:", err);
+      console.error("Erro ao enviar a imagem:", err?.code || err);
+      motivo = mensagemDeFalha(err, "");
       falharam.push(aceitas[i]);
     } finally {
       terminar[i]();
@@ -1523,9 +1730,9 @@ async function enviarImagens(arquivos) {
   // Enviar (o texto que falha também volta para o campo).
   if (falharam.length) {
     adicionarAnexos(falharam);
-    Core.aviso(falharam.length > 1
+    Core.aviso((falharam.length > 1
       ? `${falharam.length} fotos não foram enviadas. Elas ficaram na caixa para tentar de novo.`
-      : "A foto não foi enviada. Ela ficou na caixa para tentar de novo.", "erro");
+      : "A foto não foi enviada. Ela ficou na caixa para tentar de novo.") + (motivo ? ` (${motivo})` : ""), "erro");
   }
 }
 
@@ -1729,7 +1936,7 @@ async function gravarAudio() {
         Core.aviso("Áudio muito curto.", "info");
         return;
       }
-      enviarAudioGravado(pedacos, gravador.mimeType);
+      enviarAudioGravado(pedacos, gravador.mimeType, (esta.fim || Date.now()) - esta.inicio);
     };
     gravador.start();
     esta.gravador = gravador;
@@ -1767,18 +1974,18 @@ function pararGravacao(enviarDepois) {
   if (!ehToque()) elTexto?.focus();
 }
 
-async function enviarAudioGravado(pedacos, mimeType) {
+async function enviarAudioGravado(pedacos, mimeType, duracaoMs = 0) {
   const terminar = comecarEnvio("audio");
   try {
-    // O tipo real vem do gravador (audio/webm no Chrome, audio/mp4 no
-    // Safari).
-    const tipo = (mimeType || pedacos[0]?.type || "audio/webm").split(";")[0];
-    const extensao = tipo.includes("mp4") ? "m4a" : tipo.includes("ogg") ? "ogg" : "webm";
-    const url = await subirArquivo("audios", new Blob(pedacos, { type: tipo }), extensao);
-    await enviar(url, "audio");
+    // O tipo informado vem do gravador (audio/webm no Chrome, audio/mp4 no
+    // Safari), mas o que vale é o conteúdo — prepararAudio confere.
+    const tipoInformado = mimeType || pedacos[0]?.type || "";
+    const { blob, mime } = await prepararAudio(new Blob(pedacos, { type: tipoInformado.split(";")[0] }), tipoInformado);
+    const extras = duracaoMs > 0 ? { duracao: Math.min(600000, Math.round(duracaoMs)) } : {};
+    await enviarMidiaNaConversa("audio", blob, mime, extras);
   } catch (err) {
-    console.error("Erro no upload do áudio:", err);
-    Core.aviso("Erro ao enviar o áudio.", "erro");
+    console.error("Erro ao enviar o áudio:", err?.code || err);
+    Core.aviso(mensagemDeFalha(err, "Erro ao enviar o áudio."), "erro");
   } finally {
     terminar();
   }
@@ -2104,7 +2311,9 @@ function iniciarChamada(tipo) {
     return;
   }
 
-  const params = new URLSearchParams({ u: outroUsuario, papel: "emissor" });
+  // Só este clique autoriza a tela da chamada a ligar câmera e microfone.
+  const nonce = registrarIntencaoDeChamada({ com: outroUsuario, papel: "emissor", audio: tipo === "audio" });
+  const params = new URLSearchParams({ u: outroUsuario, papel: "emissor", n: nonce });
   if (tipo === "audio") params.set("audio", "true");
 
   Radar.emit({ type: "chamada", to: outroUsuario, content: tipo });
@@ -2116,6 +2325,216 @@ function iniciarChamada(tipo) {
     window.location.href = `chamada.html?${params.toString()}`;
   }
 }
+
+// ==========================================================================
+// PROTEÇÃO DE PONTA A PONTA (só conversa direta)
+// ==========================================================================
+
+const btnProtecao = document.querySelector('[data-acao="protecao"]');
+const elFaixaProtecao = document.getElementById("faixaProtecao");
+let protecaoIniciada = false;
+let estadoDaProtecao = { verificado: false, mudou: false };
+
+function uidDoOutro() {
+  return (chatDoc?.uids || []).find((u) => u !== sessaoAtual?.user?.uid) || null;
+}
+
+function nomeCurtoDoContato() {
+  return nomesConhecidos.get(outroUsuario) || `@${outroUsuario}`;
+}
+
+/** Pinta o botão do escudo e a faixa conforme o estado da conversa. */
+async function atualizarProtecao() {
+  if (modoGrupo || !btnProtecao || !sessaoAtual) return;
+  protecaoIniciada = true;
+  mostrar(btnProtecao, true);
+
+  const ativa = conversaProtegida();
+  btnProtecao.classList.toggle("ativa", ativa);
+  btnProtecao.setAttribute("aria-label", ativa ? "Conversa protegida: ver número de segurança" : "Ativar proteção de ponta a ponta");
+  btnProtecao.title = ativa ? "Conversa protegida" : "Proteção de ponta a ponta";
+  if (!ativa) {
+    btnProtecao.classList.remove("alerta");
+    mostrar(elFaixaProtecao, false);
+    return;
+  }
+
+  const uid = uidDoOutro();
+  try {
+    if (uid) estadoDaProtecao = await estadoDoContato(uid);
+  } catch (err) {
+    console.warn("Não foi possível conferir as chaves do contato:", err?.codigo || err?.code || err);
+  }
+  btnProtecao.classList.toggle("alerta", estadoDaProtecao.mudou);
+  if (elFaixaProtecao) {
+    elFaixaProtecao.dataset.estado = estadoDaProtecao.mudou ? "alerta" : "ok";
+    elFaixaProtecao.textContent = estadoDaProtecao.mudou
+      ? `⚠️ As chaves de segurança de ${nomeCurtoDoContato()} mudaram. Toque para conferir.`
+      : estadoDaProtecao.verificado
+        ? "🔒 Protegida de ponta a ponta · número de segurança verificado"
+        : "🔒 Protegida de ponta a ponta · toque para verificar";
+    mostrar(elFaixaProtecao, true);
+  }
+}
+
+/**
+ * Caixa de diálogo simples (mesmo visual do Core.confirmar), com os botões
+ * pedidos. Devolve a função que fecha.
+ */
+function abrirDialogo({ titulo, corpo = [], botoes = [] }) {
+  const focoAnterior = document.activeElement;
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const caixa = document.createElement("div");
+  caixa.className = "modal-confirmacao dialogo-protecao";
+  caixa.setAttribute("role", "dialog");
+  caixa.setAttribute("aria-modal", "true");
+
+  const h = document.createElement("h2");
+  h.className = "modal-titulo";
+  h.id = `dialogo-${Date.now()}`;
+  h.textContent = titulo;
+  caixa.setAttribute("aria-labelledby", h.id);
+  caixa.append(h, ...corpo);
+
+  const acoes = document.createElement("div");
+  acoes.className = "modal-acoes";
+  let fechado = false;
+  const fechar = () => {
+    if (fechado) return;
+    fechado = true;
+    overlay.classList.remove("aberto");
+    setTimeout(() => overlay.remove(), 200);
+    document.removeEventListener("keydown", aoTeclar, true);
+    try { focoAnterior?.focus?.(); } catch (_) {}
+  };
+  const aoTeclar = (e) => {
+    if (e.key === "Escape") { e.preventDefault(); fechar(); }
+  };
+  botoes.forEach(({ texto, primario = false, acao }) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = primario ? "btn-modal btn-modal-primario" : "btn-modal";
+    b.textContent = texto;
+    b.addEventListener("click", async () => {
+      if (!acao) { fechar(); return; }
+      b.disabled = true;
+      try {
+        if ((await acao()) !== false) fechar();
+      } finally {
+        b.disabled = false;
+      }
+    });
+    acoes.appendChild(b);
+  });
+  caixa.appendChild(acoes);
+  overlay.appendChild(caixa);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) fechar(); });
+  document.body.appendChild(overlay);
+  document.addEventListener("keydown", aoTeclar, true);
+  requestAnimationFrame(() => overlay.classList.add("aberto"));
+  acoes.querySelector("button")?.focus();
+  return fechar;
+}
+
+function paragrafo(texto, classe = "") {
+  const p = document.createElement("p");
+  if (classe) p.className = classe;
+  p.textContent = texto;
+  return p;
+}
+
+async function abrirDialogoDeProtecao() {
+  if (modoGrupo || !chatId || !sessaoAtual) return;
+  await aguardarDocumentoDaConversa();
+  const uid = uidDoOutro();
+  if (!uid) {
+    Core.aviso("Mande a primeira mensagem antes de proteger a conversa.", "info");
+    return;
+  }
+
+  if (!conversaProtegida()) {
+    abrirDialogo({
+      titulo: "Proteger esta conversa?",
+      corpo: [
+        paragrafo("Com a proteção ligada, mensagens, fotos e áudios desta conversa são cifrados no seu aparelho e só abrem nos aparelhos de vocês dois. Nem o servidor do Sinex consegue ler."),
+        paragrafo("A proteção não pode ser desligada depois. Mensagens antigas continuam como estão, e um aparelho novo não abre o que foi enviado antes dele existir."),
+      ],
+      botoes: [
+        { texto: "Cancelar" },
+        {
+          texto: "Ativar proteção",
+          primario: true,
+          acao: async () => {
+            try {
+              await ativarProtecao(sessaoAtual, chatId, uid);
+              Core.aviso("Conversa protegida de ponta a ponta.", "sucesso");
+              return true;
+            } catch (err) {
+              console.error("Falha ao ativar a proteção:", err?.codigo || err?.code || err);
+              Core.aviso(err instanceof ErroE2EE ? err.message : "Não foi possível ativar a proteção agora.", "erro");
+              return false;
+            }
+          },
+        },
+      ],
+    });
+    return;
+  }
+
+  let numero = "";
+  try {
+    numero = await numeroDaConversa(sessaoAtual, uid);
+  } catch (err) {
+    Core.aviso(err instanceof ErroE2EE ? err.message : "Não foi possível calcular o número de segurança.", "erro");
+    return;
+  }
+  const estado = await estadoDoContato(uid).catch(() => estadoDaProtecao);
+
+  const bloco = document.createElement("div");
+  bloco.className = "numero-seguranca";
+  bloco.setAttribute("aria-label", `Número de segurança: ${numero}`);
+  numero.split(" ").forEach((grupo) => {
+    const span = document.createElement("span");
+    span.textContent = grupo;
+    bloco.appendChild(span);
+  });
+
+  const situacao = estado.mudou
+    ? paragrafo(`As chaves de ${nomeCurtoDoContato()} mudaram desde a última vez (aparelho novo, reinstalação — ou alguém no meio). Confira o número de novo.`, "selo-alerta")
+    : estado.verificado
+      ? paragrafo("✔ Você já verificou este número.", "selo-verificado")
+      : paragrafo("Ainda não verificado.");
+
+  const botoes = [{ texto: "Fechar" }];
+  if (estado.mudou && !estado.verificado) {
+    botoes.push({
+      texto: "Aceitar chaves novas",
+      acao: async () => { await aceitarChavesAtuais(uid); await atualizarProtecao(); },
+    });
+  }
+  botoes.push(estado.verificado
+    ? { texto: "Remover verificação", acao: async () => { await marcarVerificado(uid, false); await atualizarProtecao(); } }
+    : { texto: "Marcar como verificado", primario: true, acao: async () => { await marcarVerificado(uid, true); await atualizarProtecao(); Core.aviso("Número marcado como verificado.", "sucesso"); } });
+
+  abrirDialogo({
+    titulo: "Conversa protegida",
+    corpo: [
+      paragrafo(`Para ter certeza de que ninguém está no meio, compare este número com o que aparece no aparelho de ${nomeCurtoDoContato()} — pessoalmente ou por outro meio. Se for igual, marque como verificado.`),
+      bloco,
+      situacao,
+    ],
+    botoes,
+  });
+}
+
+btnProtecao?.addEventListener("click", abrirDialogoDeProtecao);
+elFaixaProtecao?.addEventListener("click", abrirDialogoDeProtecao);
+elFaixaProtecao?.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" && e.key !== " ") return;
+  e.preventDefault();
+  abrirDialogoDeProtecao();
+});
 
 // ==========================================================================
 // INICIALIZAÇÃO
@@ -2209,9 +2628,23 @@ async function iniciarComoGrupo() {
   const perfis = await Promise.all(
     outrosParticipantes.map((u) => buscarPerfilPorUsername(u).catch(() => null))
   );
+  // Quem autoriza é a lista de uids; a de @ é só exibição e quem criou o
+  // grupo escreveu as duas. Um @ cujo perfil não está entre os uids do grupo
+  // não é mostrado como participante (seria nome de outra pessoa).
+  const uidsDoGrupo = new Set(chat.uids || []);
+  let divergentes = 0;
   perfis.forEach((perfil, i) => {
+    if (perfil?.uid && !uidsDoGrupo.has(perfil.uid)) {
+      divergentes++;
+      participantesValidos.delete(outrosParticipantes[i]);
+      return;
+    }
     if (perfil?.nome) nomesConhecidos.set(outrosParticipantes[i], perfil.nome);
   });
+  if (divergentes) {
+    console.warn(`Grupo com ${divergentes} participante(s) que não conferem com os uids.`);
+    Core.aviso("Alguns participantes deste grupo não puderam ser confirmados.", "alerta");
+  }
   const nomes = outrosParticipantes.map((u) => nomesConhecidos.get(u) || u);
   elStatus.textContent = nomes.length > 3
     ? `Você, ${nomes.slice(0, 3).join(", ")} e mais ${nomes.length - 3}`
@@ -2233,6 +2666,12 @@ async function iniciar() {
   }
 
   escutarConversa();
+
+  // Chaves deste aparelho para a conversa protegida (cria e publica só a
+  // parte pública na primeira vez). Falhar aqui não impede a conversa comum.
+  if (!modoGrupo) {
+    garantirAparelho(sessaoAtual).catch((err) => console.warn("Chaves do aparelho indisponíveis:", err?.codigo || err?.code || err));
+  }
 }
 
 /**
@@ -2253,7 +2692,10 @@ function escutarConversa() {
   if (!pararDeEscutarChat) {
     pararDeEscutarChat = escutarChat(chatId, (chat) => {
       if (!chat) return;
+      const protecaoAntes = !!chatDoc?.e2ee?.ativo;
       chatDoc = chat;
+      resolverChatPronto?.();
+      if (!modoGrupo && (protecaoAntes !== !!chat.e2ee?.ativo || !protecaoIniciada)) atualizarProtecao();
       if (modoGrupo && Array.isArray(chat.usuarios)) {
         participantesDoGrupo = chat.usuarios;
         participantesValidos = new Set(chat.usuarios.filter((u) => u !== sessaoAtual.username));

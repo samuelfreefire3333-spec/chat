@@ -5,6 +5,9 @@ confirmações de entrega e leitura, grupos e chamadas de voz e vídeo.
 Front-end estático no Netlify (<https://sinexchat.netlify.app>), dados no
 Firestore e um backend Go no Render que cuida do WebSocket.
 
+**Segurança:** auditoria, modelo de ameaça, criptografia de ponta a ponta e
+configuração de produção estão em [`SEGURANCA.md`](SEGURANCA.md).
+
 ---
 
 ## Arquitetura
@@ -14,7 +17,8 @@ Navegador (PWA)
   │
   ├── Firebase Auth ........... identidade (uid). É a fonte da verdade.
   ├── Firestore ............... perfis, conversas, mensagens, seguidores
-  ├── Firebase Storage ........ avatares, áudios e imagens do chat
+  ├── Firebase Storage ........ avatares (públicos para quem está logado) e
+  │                             mídia das conversas (privada, por participante)
   │
   └── Backend Go (WebSocket) .. presença online/offline, "digitando",
                                 notificação de mensagem, sinalização WebRTC
@@ -32,9 +36,10 @@ esconde botões por conveniência visual; ele não protege nada sozinho.
 
 - Toda autorização se apoia no `uid` do token do Firebase.
 - O documento em `usuarios/{username}` guarda o campo `uid` que liga o perfil
-  à conta de autenticação.
-- O backend Go verifica o ID token com o Admin SDK e ignora qualquer
-  identidade que o cliente afirme ter.
+  à conta de autenticação; `contas/{uid}` garante um perfil por conta.
+- O backend Go verifica o ID token com o Admin SDK, ignora qualquer
+  identidade que o cliente afirme ter e confere, para cada quadro do
+  WebSocket, se remetente e destinatário participam da conversa.
 
 ---
 
@@ -42,10 +47,17 @@ esconde botões por conveniência visual; ele não protege nada sozinho.
 
 | Coleção | Documento | Observações |
 |---|---|---|
-| `usuarios/{username}` | perfil | `uid` liga ao Firebase Auth; `status` (`ativo`/`suspenso`/`banido`) só admin altera; `lastSeen` (ms) é gravado pelo backend |
-| `chats/{chatId}` | conversa | direta: `chatId` = os dois usernames em ordem alfabética unidos por `_`; grupo: ID aleatório. `uids` é o que as regras conferem. Resumo: `ultimaMensagem`, `ultimoRemetente`, `ultimoTipo`, `timestamp`. Confirmações: `entregas.{uid}` e `leituras.{uid}` (Timestamp da última mensagem entregue/lida por aquela pessoa) |
-| `chats/{chatId}/mensagens/{id}` | mensagem | uma por documento, `timestamp` do servidor; `reacoes.{uid}` = emoji |
+| `usuarios/{username}` | perfil público (para quem está logado) | `uid` liga ao Firebase Auth; `status` (`ativo`/`suspenso`/`banido`) só admin altera; `lastSeen` (ms) é gravado pelo backend. **Sem e-mail.** |
+| `contas/{uid}` | dados privados | `usuario`, `email`, `criadoEm`. Só o dono (e o admin) lê; nasce uma vez, junto com o perfil |
+| `chats/{chatId}` | conversa | direta: `chatId` = os dois usernames em ordem alfabética unidos por `_`; grupo: ID aleatório, `criadoPorUid` (só essa pessoa apaga o grupo). `uids` é o que as regras conferem e nunca muda. Resumo: `ultimaMensagem`, `ultimoRemetente`, `ultimoTipo`, `timestamp`. Confirmações: `entregas.{uid}` e `leituras.{uid}`. Conversa protegida: `e2ee: {ativo, ativadoPor, desde}` (liga uma vez, não desliga) |
+| `chats/{chatId}/mensagens/{id}` | mensagem | `tipo`: `texto` (`texto`), `imagem`/`audio` (`midia: {caminho, mime, tamanho, …}` — caminho privado no Storage, nunca link), `sistema` (só avisos de chamada), `cifrada` (`e2ee`: envelope, só em conversa protegida). `timestamp` do servidor; `reacoes.{uid}` = emoji |
 | `seguidores/{seguidor}_{seguindo}` | aresta | criada e removida só por quem segue |
+| `chavesPublicas/{uid}/dispositivos/{id}` | aparelho | só as chaves **públicas** da criptografia de ponta a ponta; só o dono publica e apaga |
+
+Storage: `avatares/{uid}/{uuid}.jpg` (foto de perfil) e
+`midia/{chatId}/{uid}/{uuid}` (fotos e áudios das conversas, baixados com
+login e só por quem participa). `imagens/` e `audios/` são do app antigo e
+somem com a migração.
 
 A mensagem e o resumo da conversa são gravados no **mesmo lote**
 (`writeBatch`), então os dois têm exatamente o mesmo `timestamp` — é isso que
@@ -74,6 +86,8 @@ python -m http.server 5500
 Abra <http://localhost:5500>. Note que o CSP é entregue como **header HTTP**
 pelo Netlify (`netlify.toml`; o `firebase.json` tem o equivalente para o
 Firebase Hosting), então num servidor estático simples ele não estará ativo.
+Para a mídia privada abrir em `localhost`, a origem precisa estar no CORS do
+bucket (ver `SEGURANCA.md`, seção 15).
 
 ### Backend
 
@@ -90,7 +104,10 @@ como verificar tokens, e subir assim significaria aceitar qualquer conexão.
 Testes:
 
 ```bash
-go test ./...
+go test -race ./...                         # backend e comando de migração
+node --test "testes/js/*.test.mjs"          # criptografia e validação de mídia (Node 22+)
+cd testes/regras && npm ci && npm test      # regras do Firestore/Storage (emuladores; Java 21+)
+cd testes/navegador && npm ci && npx playwright install chromium && npm test   # páginas no Chromium com a CSP de produção
 ```
 
 ---
@@ -100,8 +117,8 @@ go test ./...
 ### Front-end
 
 O Netlify publica sozinho a cada commit na branch `main` do GitHub. Só vão
-para o ar os `.html`, `.css`, `.js`, o `manifest.json` e a pasta `assets/`
-(ver `[build]` no `netlify.toml`).
+para o ar os `.html`, `.css`, `.js`, o `manifest.json` e as pastas `assets/`
+e `vendor/` (ver `[build]` no `netlify.toml`).
 
 ### Regras e índices do Firestore
 
@@ -111,20 +128,27 @@ firebase deploy --only firestore,storage
 
 Ou cole o conteúdo de `firestore.rules` em *Firebase Console → Firestore →
 Regras* e publique. Publicar as regras é obrigatório: sem elas o banco fica
-aberto. Antes de publicar, dá para testar cada operação no *Simulador de
-regras* da mesma tela.
+aberto. Antes de publicar, rode a suíte de `testes/regras`.
+
+O Storage precisa também do CORS do bucket (`cors.json`) e, na primeira
+publicação, da permissão para as regras lerem o Firestore — o passo a passo
+está em `SEGURANCA.md`, seção 15.
 
 ### Backend (Render)
 
-Variáveis de ambiente:
+Variáveis de ambiente (todas descritas em `.env.example`):
 
 | Variável | Para quê |
 |---|---|
+| `APP_ENV` | `production` (padrão) ou `development` |
 | `PORT` | definida automaticamente pelo Render |
 | `FIREBASE_PROJECT_ID` | padrão `chat-parameuamor` |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | JSON da service account, em uma linha |
-| `ALLOWED_ORIGINS` | origens extras para o WebSocket, separadas por vírgula |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | JSON da service account (só tipo `service_account`), em uma linha |
+| `ALLOWED_ORIGINS` | origens extras, separadas por vírgula (sem `*`) |
+| `TRUST_PROXY_HEADERS` | usar o IP real informado pelo proxy do Render (padrão `true` em produção) |
+| `REQUIRE_HTTPS` | recusar conexões sem TLS (use `true` no Render) |
 | `PRESENCE_GRACE_MS` | folga antes de anunciar "offline" (padrão 6000). Evita piscar offline/online ao trocar de tela |
+| `MAX_CONNECTIONS`, `MAX_CONNECTIONS_PER_IP`, `MAX_CONNECTIONS_PER_USER` | tetos de conexões (padrão 5000 / 30 / 10) |
 
 O servidor encerra com calma no `SIGTERM` (deploy/reinício do Render): grava o
 `lastSeen` de quem estava online e fecha as conexões; os clientes reconectam
@@ -141,20 +165,26 @@ recarregam sozinhas quando a versão nova assume — menos a janela da chamada
 
 ## Protocolo do WebSocket
 
-1. O cliente abre `wss://.../ws` e manda **primeiro** `{"type":"auth","token":"<ID token>"}`.
-2. O servidor responde `auth_ok` com `payload: {"versao":2,"recursos":[...]}`.
-   Os recursos atuais: `ping`, `status-lote`, `presenca-graca`, `visto-no-aviso`.
-   O cliente só usa o que o servidor anunciou, então front e back podem ser
-   publicados em qualquer ordem.
+1. O cliente abre `wss://.../ws` e manda **primeiro** (em até 10 s, até
+   8 KB) `{"type":"auth","token":"<ID token>"}`. O token nunca vai na URL.
+2. O servidor responde `auth_ok` com `payload: {"versao":3,"recursos":[...]}`.
+   Os recursos atuais: `ping`, `status-lote`, `presenca-graca`,
+   `visto-no-aviso`, `aviso-por-conversa`, `erros`. O cliente só usa o que o
+   servidor anunciou, então front e back podem ser publicados em qualquer
+   ordem.
 3. Batimento: o cliente manda `ping` a cada 25 s parado; sem `pong` em 10 s,
    reconecta.
+4. Cada quadro é reconstruído pelo servidor a partir de uma lista de campos
+   permitidos, e só é entregue se remetente e destinatário participam da
+   conversa. Recusas voltam como `{"type":"erro","content":"<código>"}`.
+   Limites por conta e tetos de conexão: `SEGURANCA.md`, seção 5.
 
 | Tipo | Direção | Para quê |
 |---|---|---|
 | `status_check` / `status_lote` | cliente → servidor | presença de 1 pessoa / de várias num quadro só |
 | `status_update` / `status_reply` | servidor → cliente | `online` ou `offline` + `lastSeen` |
 | `digitando` / `parou_digitando` | ida e volta | com `payload.chatId`; o servidor limita a 1 aviso a cada 700 ms e descarta rajadas logo após conectar |
-| `chat` | ida e volta | aviso de mensagem nova, com o `chatId` (a mensagem em si está no Firestore); serve também para marcar "entregue" |
+| `chat` | ida e volta | aviso de mensagem nova, só com o `chatId` (a mensagem em si está no Firestore; qualquer texto é descartado pelo servidor); sem `to`, vai para todos os participantes. Serve também para marcar "entregue" |
 | `webrtc`, `chamada`, `cancelar_chamada` | ida e volta | sinalização da chamada (oferta, resposta, candidatos, `consultar_toque`/`tocando`) |
 
 "Digitando" e presença nunca entram na fila offline do cliente: reentregar
@@ -183,17 +213,27 @@ go run ./cmd/setadmin -email pessoa@exemplo.com -revogar
 
 A pessoa precisa sair e entrar de novo para o token novo valer.
 
+No painel (`admin.html`), suspender/banir passa pelo backend
+(`POST /admin/status`): grava o status, desativa a conta no Firebase Auth,
+revoga as sessões e derruba o WebSocket. O painel também mostra os
+contadores (`GET /admin/contadores`) e os eventos de segurança recentes
+(`GET /admin/seguranca`). O admin **não** lê conversas.
+
 ---
 
 ## Migração de contas antigas
 
 Contas criadas antes desta versão não têm o campo `uid` no perfil. O backend
 grava esse campo sozinho na primeira vez que a pessoa conecta (localizando o
-perfil pelo e-mail do token).
+perfil pelo e-mail do token) — ou rode a migração, que faz isso para todos.
 
 Enquanto uma conta não tiver `uid`, não é possível **iniciar uma conversa
-nova** com ela — as regras não teriam como autorizar o acesso. Basta a pessoa
-abrir o app uma vez.
+nova** com ela — as regras não teriam como autorizar o acesso.
+
+O comando `cmd/migrar-seguranca` aplica as mudanças de segurança aos dados
+que já existem (uid, `contas/{uid}`, e-mail fora do perfil público, avatar de
+terceiros, mídia antiga para `midia/` sem link público, limpeza de órfãos).
+Por padrão só simula; veja `SEGURANCA.md`, seção 14.
 
 As mensagens antigas ficavam num array dentro de `chats/{id}`. Este código lê
 e escreve a subcoleção `mensagens`; conversas antigas aparecem vazias até
@@ -210,17 +250,31 @@ tema.js ............ aplica o tema antes da primeira pintura
 radar.js ........... WebSocket, presença, chamadas recebidas, notificações
 mensagens.js ....... leitura e escrita das conversas
 firebase.js ........ inicialização do SDK
+midia.js ........... envio e download da mídia privada (sem EXIF, tipo conferido)
+midia-validacao.js . assinatura real de arquivos e caminhos (sem DOM, testável)
+e2ee.js ............ criptografia de ponta a ponta: aparelho, chaves, conversas
+e2ee-cripto.js ..... núcleo criptográfico (HPKE + AES-GCM + ECDSA, testável)
+vendor/ ............ biblioteca HPKE (RFC 9180) empacotada, com hash conferido
 
 <página>.js ........ um módulo por tela (login, cadastro, chat, inbox, ...)
 
 chamada.js ......... a janela da chamada (WebRTC, PiP, estados)
 chamada-flutuante.js barra de chamada em andamento e conversa entre janelas
 
-main.go ............ HTTP, handshake e autenticação do WebSocket
+main.go ............ rotas HTTP, handshake e autenticação do WebSocket
+config.go .......... configuração validada a partir do ambiente
+seguranca_http.go .. headers, CORS, IP do cliente, leitura segura de JSON
+protocolo.go ....... validação e reconstrução de cada quadro do WebSocket
+autorizacao.go ..... quem participa de qual conversa (camada única, com cache)
+limites.go ......... limitadores de taxa, falhas e conexões
+auditoria.go ....... eventos de segurança (sem dados sensíveis)
+contratos.go ....... interfaces com o Firebase (trocadas por simulações nos testes)
 hub.go ............. roteamento de mensagens e presença
-client.go .......... pumps de leitura/escrita e limite de taxa
-identity.go ........ verificação de token e persistência do lastSeen
+client.go .......... pumps de leitura/escrita, limites e detecção de abuso
+identity.go ........ verificação de token, contas, banimento, lastSeen
 cmd/setadmin ....... concede/revoga permissão de admin
+cmd/migrar-seguranca migração de segurança dos dados existentes
+testes/ ............ testes de JS (Node) e das regras (emuladores)
 assets/ ............ ícones do PWA, sons e avatares padrão (pessoa e grupo)
 ```
 
@@ -235,5 +289,9 @@ assets/ ............ ícones do PWA, sons e avatares padrão (pessoa e grupo)
   `Core.mostrar(elemento, visivel)` (classe `.u-hidden`), não `style.display`.
 - Conteúdo vindo do banco entra no DOM por `textContent` ou `createElement`,
   nunca por `innerHTML`.
+- Mídia de conversa nunca por `getDownloadURL()`: sempre `urlDaMidia()`
+  (`midia.js`), que baixa com login e confere o tipo real do arquivo.
+- Nada de segredo no front-end; a configuração do Firebase é pública e quem
+  protege os dados são as regras.
 - Timestamps são do servidor (`serverTimestamp()`), não do relógio do
   aparelho.

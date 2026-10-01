@@ -2,7 +2,7 @@ import Core, { sessao, urlSegura, AVATAR_PADRAO, buscarPerfilPorUsername } from 
 import { registrarEventoDeChamada, marcarEntregueDoAviso } from "./mensagens.js";
 import {
   abrirJanelaDeChamada, ligarBarraDeChamada, lerEstadoDaChamada,
-  avisarJanelas, focarJanelaDaChamada,
+  avisarJanelas, focarJanelaDaChamada, registrarIntencaoDeChamada,
 } from "./chamada-flutuante.js";
 
 const URL_BACKEND = "wss://sinex-backend-go.onrender.com/ws";
@@ -76,6 +76,23 @@ const Radar = {
     }
     agendarReconexao();
     return false;
+  },
+
+  /**
+   * Avisa os participantes de que há mensagem nova numa conversa. O texto
+   * NUNCA vai junto: ele está no Firestore (e, na conversa protegida,
+   * cifrado). Com servidor novo vai um quadro só, e o servidor entrega a
+   * quem participa da conversa; com o antigo, um por pessoa.
+   */
+  avisarMensagem(chatId, destinatarios = []) {
+    if (!chatId) return;
+    if (this.recursos.has("aviso-por-conversa")) {
+      this.emit({ type: "chat", payload: { chatId } });
+      return;
+    }
+    destinatarios.filter(Boolean).forEach((usuario) => {
+      this.emit({ type: "chat", to: usuario, payload: { chatId } });
+    });
   },
 
   /** Pergunta ao servidor se alguém está online. */
@@ -257,6 +274,7 @@ async function conectar() {
     }
 
     if (msg.type === "auth_ok") {
+      meuUsername = typeof msg.to === "string" ? msg.to : "";
       conectando = false;
       tentativas = 0;
       Radar.estado = "conectado";
@@ -337,8 +355,22 @@ function agendarEntrega(chatId) {
   }, 800));
 }
 
+let meuUsername = "";
+
 function tratarMensagem(msg) {
+  if (msg.type === "erro") {
+    // O servidor recusou algo (sem permissão, formato, limite). Não é para a
+    // pessoa: é sinal de bug ou de abuso. Só o limite merece aviso na tela.
+    console.warn("Servidor recusou um aviso:", msg.content, msg.payload?.tipo || "");
+    if (msg.content === "limite_excedido" && msg.payload?.tipo === "chamada") {
+      Core.aviso("Muitas chamadas seguidas. Aguarde um pouco.", "alerta");
+    }
+    return;
+  }
+
   if (msg.type === "chat") {
+    // Eco de uma mensagem minha enviada de outro aparelho: não é "não lida".
+    if (meuUsername && msg.from === meuUsername) return;
     const params = new URLSearchParams(window.location.search);
     const naPaginaDeChat = window.location.pathname.includes("chat.html");
 
@@ -366,6 +398,7 @@ function tratarMensagem(msg) {
   }
 
   if (msg.type === "chamada") {
+    if (msg.content !== "audio" && msg.content !== "video") return;
     mostrarChamadaRecebida(msg);
     return;
   }
@@ -519,7 +552,9 @@ export function renderizarBalaoChamada() {
     try { localStorage.removeItem("chamada_ativa"); } catch (_) {}
     removerBalaoChamada();
 
-    const params = new URLSearchParams({ u: dados.quemLiga, papel: "receptor" });
+    // Só este clique autoriza a tela da chamada a ligar câmera e microfone.
+    const nonce = registrarIntencaoDeChamada({ com: dados.quemLiga, papel: "receptor", audio: ehAudio });
+    const params = new URLSearchParams({ u: dados.quemLiga, papel: "receptor", n: nonce });
     if (ehAudio) params.set("audio", "true");
 
     // Chamada em espera: a janela da chamada atual encerra a ligação de
@@ -638,9 +673,26 @@ document.addEventListener("visibilitychange", () => {
 // é carregado em todas elas, então é daqui que ela sobe.
 ligarBarraDeChamada();
 
+// Chaves deste aparelho para as conversas protegidas: criadas (e só a parte
+// pública publicada) em segundo plano, uma vez por sessão do navegador. Assim
+// qualquer contato já pode proteger uma conversa com esta pessoa. O módulo de
+// criptografia só é carregado aqui, fora do caminho da primeira pintura.
+function prepararChavesDoAparelho(s) {
+  if (window.location.pathname.includes("chamada.html")) return;
+  const marca = `e2ee_pronto_${s.user.uid}`;
+  try { if (sessionStorage.getItem(marca)) return; } catch (_) {}
+  const rodar = () => import("./e2ee.js")
+    .then((m) => m.garantirAparelho(s))
+    .then(() => { try { sessionStorage.setItem(marca, "1"); } catch (_) {} })
+    .catch((err) => console.warn("Chaves do aparelho indisponíveis:", err?.codigo || err?.code || err));
+  if ("requestIdleCallback" in window) requestIdleCallback(rodar, { timeout: 8000 });
+  else setTimeout(rodar, 3000);
+}
+
 sessao({ exigirLogin: false }).then((s) => {
   if (!s) return;
   conectar();
   atualizarBadge();
   renderizarBalaoChamada();
+  prepararChavesDoAparelho(s);
 });

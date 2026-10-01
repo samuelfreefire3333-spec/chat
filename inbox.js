@@ -54,8 +54,9 @@ async function carregarPerfis(usernames) {
     try {
       // Perfis antigos podem ter o ID do documento diferente do campo
       // "usuario": consultamos pelos dois caminhos em paralelo.
-      const qPorId = getDocs(query(collection(db, "usuarios"), where(documentId(), "in", lote)));
-      const qPorCampo = getDocs(query(collection(db, "usuarios"), where("usuario", "in", lote)));
+      // As regras exigem limite em toda listagem de perfis (anti-raspagem).
+      const qPorId = getDocs(query(collection(db, "usuarios"), where(documentId(), "in", lote), limit(30)));
+      const qPorCampo = getDocs(query(collection(db, "usuarios"), where("usuario", "in", lote), limit(30)));
 
       const [snapId, snapCampo] = await Promise.all([qPorId, qPorCampo]);
 
@@ -497,7 +498,24 @@ function cancelarSelecao() {
   aplicarEstadoDeSelecao();
 }
 
-async function apagarConversas(ids) {
+/**
+ * Grupo só quem criou apaga (as regras do Firestore conferem). Conversa
+ * direta, qualquer um dos dois — o aviso deixa claro que é para os dois.
+ */
+function podeApagar(chat) {
+  if (!chat || chat.tipo !== "grupo") return true;
+  const raw = chat.raw || {};
+  if (raw.criadoPorUid) return raw.criadoPorUid === sessaoAtual.user.uid;
+  return raw.criadoPor === sessaoAtual.username;
+}
+
+async function apagarConversas(todos) {
+  const ids = todos.filter((id) => podeApagar(conversas.find((c) => c.id === id)));
+  if (ids.length < todos.length) {
+    Core.aviso(ids.length
+      ? "Grupos criados por outras pessoas não entram: só quem criou pode apagar."
+      : "Só quem criou o grupo pode apagá-lo.", "alerta");
+  }
   if (!ids.length) return;
 
   const algumGrupo = ids.some((id) => conversas.find((c) => c.id === id)?.tipo === "grupo");
@@ -569,10 +587,10 @@ function abrirMenuContexto(evento, chatId, usuario, tipo) {
     });
   }
 
-  opcoes.push(
-    { rotulo: "Selecionar", acao: () => ativarModoSelecao(chatId) },
-    { rotulo: ehGrupo ? "Apagar grupo para todos" : "Apagar conversa", perigo: true, acao: () => apagarConversas([chatId]) }
-  );
+  opcoes.push({ rotulo: "Selecionar", acao: () => ativarModoSelecao(chatId) });
+  if (podeApagar(conversas.find((c) => c.id === chatId))) {
+    opcoes.push({ rotulo: ehGrupo ? "Apagar grupo para todos" : "Apagar conversa", perigo: true, acao: () => apagarConversas([chatId]) });
+  }
 
   opcoes.forEach(({ rotulo, acao, perigo }) => {
     const btn = document.createElement("button");

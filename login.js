@@ -12,6 +12,13 @@ const btnEsqueci = document.getElementById("btnEsqueci");
 
 let enviando = false;
 
+// Quem está na tela de login não tem sessão: nada da conta anterior deve
+// continuar guardado neste navegador. Precisa terminar antes do login, que
+// volta a usar o Firestore (ver apagarCopiaOffline no core.js).
+const limpezaDoAparelho = auth.authStateReady()
+  .then(() => (auth.currentUser ? false : Core.apagarCopiaOffline()))
+  .catch(() => false);
+
 function mensagemDeErro(codigo) {
   switch (codigo) {
     case "auth/invalid-credential":
@@ -56,6 +63,7 @@ async function fazerLogin() {
   btn.disabled = true;
 
   try {
+    await limpezaDoAparelho;
     await signInWithEmailAndPassword(auth, email, senha);
 
     // O nome de usuário sai do perfil ligado ao uid — não do e-mail nem de

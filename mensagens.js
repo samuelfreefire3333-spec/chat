@@ -23,6 +23,10 @@ import { idDoChat, buscarPerfilPorUsername, paraMillis } from "./core.js";
 // Uma mensagem com timestamp T foi entregue/lida por alguém quando a marca
 // dessa pessoa é >= T. É uma escrita por conversa aberta, não uma por mensagem.
 
+// Resumo gravado na conversa protegida no lugar do texto. O firestore.rules
+// compara com este texto exato — mudar aqui exige mudar lá.
+export const RESUMO_PROTEGIDO = "🔒 Mensagem protegida";
+
 export const LIMITE_HISTORICO = 200;
 export const TAMANHO_PAGINA_HISTORICO = 50; // quantas mensagens "carregar mais" busca por vez
 export const MINIMO_MEMBROS_GRUPO = 3; // eu + pelo menos 2 pessoas
@@ -33,8 +37,10 @@ export function resumo(tipo, texto) {
   switch (tipo) {
     case "audio": return "🎤 Mensagem de voz";
     case "imagem": return "📷 Foto";
-    case "sistema": return texto;
-    default: return texto;
+    // Conversa protegida: o resumo gravado no banco nunca carrega o texto.
+    case "cifrada": return RESUMO_PROTEGIDO;
+    case "sistema": return texto || "";
+    default: return texto || "";
   }
 }
 
@@ -147,6 +153,8 @@ export async function criarGrupo(sessao, nome, usernames) {
     usuarios,
     uids,
     criadoPor: sessao.username,
+    // É pelo uid que as regras sabem quem pode apagar o grupo.
+    criadoPorUid: sessao.user.uid,
     criadoEm: serverTimestamp(),
     timestamp: serverTimestamp(),
     ultimaMensagem: "",
@@ -180,34 +188,50 @@ export function escutarChat(chatId, aoAtualizar, aoErro) {
 
 /**
  * Grava uma mensagem num chat já resolvido (chatId + ref do documento pai).
- * Usada tanto pelo envio direto quanto pelo envio em grupo — a diferença
- * entre os dois está só em como o chat foi resolvido antes de chegar aqui.
+ * Usada tanto pelo envio direto quanto pelo envio em grupo.
+ *
+ * Formas aceitas (as regras do Firestore conferem cada uma):
+ *   texto   { texto }                      — até 4000 caracteres
+ *   imagem  { midia: {caminho, mime, …} }  — arquivo privado no Storage
+ *   audio   { midia: {caminho, mime, …} }
+ *   sistema { texto }                      — só os avisos de chamada
+ *   cifrada { e2ee: envelope }             — conversa protegida
  *
  * Mensagem e resumo do chat vão num lote só: ou os dois são gravados, ou
- * nenhum. E, no mesmo lote, os dois serverTimestamp() recebem exatamente o
- * mesmo horário — é isso que permite à caixa de entrada saber se a última
- * mensagem já foi lida comparando só o documento do chat.
+ * nenhum, e os dois serverTimestamp() recebem exatamente o mesmo horário.
  */
-async function enviarMensagemEmChat(sessao, chatId, ref, { texto, tipo = "texto", respondendoA = null }) {
+async function enviarMensagemEmChat(sessao, chatId, ref, { texto = "", tipo = "texto", respondendoA = null, midia = null, e2ee = null }) {
   const conteudo = String(texto || "").trim();
-  if (!conteudo) return null;
-
   const mensagem = {
     remetente: sessao.username,
     remetenteUid: sessao.user.uid,
-    texto: conteudo,
     tipo,
     timestamp: serverTimestamp(),
   };
 
-  // Resposta a outra mensagem: guardamos uma prévia junto (denormalizado) em
-  // vez de só o ID, para desenhar a citação na hora sem mais uma leitura no
-  // Firestore por mensagem exibida.
+  if (tipo === "texto" || tipo === "sistema") {
+    if (!conteudo) return null;
+    mensagem.texto = conteudo;
+  } else if (tipo === "imagem" || tipo === "audio") {
+    if (!midia?.caminho) return null;
+    mensagem.midia = midia;
+  } else if (tipo === "cifrada") {
+    if (!e2ee) return null;
+    mensagem.e2ee = e2ee;
+  } else {
+    throw new Error(`Tipo de mensagem desconhecido: ${tipo}`);
+  }
+
+  // Resposta a outra mensagem: guardamos uma prévia junto (denormalizado).
+  // Na conversa protegida a prévia vai DENTRO do conteúdo cifrado; aqui fica
+  // só o ID, para o toque levar até a original.
   if (respondendoA?.id) {
     mensagem.respostaId = respondendoA.id;
-    mensagem.respostaAutor = respondendoA.autor;
-    mensagem.respostaTexto = resumo(respondendoA.tipo, respondendoA.texto).slice(0, 120);
-    mensagem.respostaTipo = respondendoA.tipo;
+    if (tipo !== "cifrada") {
+      mensagem.respostaAutor = respondendoA.autor;
+      mensagem.respostaTexto = resumo(respondendoA.tipo, respondendoA.texto).slice(0, 120);
+      mensagem.respostaTipo = respondendoA.tipo;
+    }
   }
 
   const refMensagem = doc(collection(db, "chats", chatId, "mensagens"));

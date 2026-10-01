@@ -1,16 +1,32 @@
 import { auth } from "./firebase.js";
 import { signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import Core, { sessao, encerrarSessao, montarAvatarNav, definirAvatar, mostrar } from "./core.js";
-import Radar from "./radar.js";
+import Core, { sessao, encerrarSessao, apagarCopiaOffline, montarAvatarNav, definirAvatar, mostrar } from "./core.js";
+import Radar, { URL_BACKEND_HTTP } from "./radar.js";
+
+/**
+ * Sair desliga este aparelho da conta: a chave pública dele sai da lista (as
+ * pessoas param de cifrar para ele) e as chaves privadas são apagadas do
+ * navegador. É o que o WhatsApp Web e o Signal fazem ao desconectar.
+ */
+async function desvincularEsteAparelho(s) {
+  try {
+    const { revogarEsteAparelho } = await import("./e2ee.js");
+    await revogarEsteAparelho(s);
+  } catch (erro) {
+    console.warn("Não foi possível remover as chaves deste aparelho:", erro?.codigo || erro?.code || erro);
+  }
+}
 
 async function sairDaConta() {
-  const confirmar = await Core.confirmar("Você vai precisar entrar de novo para ver suas conversas.", {
+  const confirmar = await Core.confirmar("Você vai precisar entrar de novo para ver suas conversas. Mensagens de conversas protegidas recebidas neste aparelho não voltam a abrir aqui.", {
     titulo: "Sair da conta?",
     confirmarTexto: "Sair",
   });
   if (!confirmar) return;
 
   try {
+    const s = await sessao({ exigirLogin: false });
+    if (s) await desvincularEsteAparelho(s);
     // O lastSeen é gravado pelo servidor quando o WebSocket cai — por isso
     // encerramos a conexão antes de deslogar.
     //
@@ -21,11 +37,58 @@ async function sairDaConta() {
     // conseguia sair da conta.
     Radar.encerrar();
     await signOut(auth);
+    // Conversas guardadas para uso offline não ficam no aparelho.
+    await apagarCopiaOffline({ encerrar: true });
     encerrarSessao();
     window.location.replace("login.html");
   } catch (erro) {
     console.error("Erro ao sair:", erro);
     Core.aviso("Erro ao desconectar. Tente novamente.", "erro");
+  }
+}
+
+/**
+ * "Sair de todos os aparelhos": o backend revoga os refresh tokens da conta
+ * (nenhum aparelho consegue renovar a sessão) e derruba as conexões abertas;
+ * aqui as chaves públicas dos outros aparelhos saem da lista, e este sai
+ * também. Um aparelho roubado com a sessão aberta perde o acesso ao Firestore
+ * quando o token dele expirar (no máximo 1 hora) e o WebSocket na hora.
+ */
+async function sairDeTodosOsAparelhos(botao) {
+  const ok = await Core.confirmar(
+    "Todos os aparelhos onde você entrou — inclusive este — vão precisar entrar de novo. Use se perdeu um aparelho ou acha que alguém entrou na sua conta.",
+    { titulo: "Sair de todos os aparelhos?", confirmarTexto: "Sair de todos" }
+  );
+  if (!ok) return;
+
+  botao.disabled = true;
+  try {
+    const s = await sessao();
+    const token = await s.user.getIdToken();
+
+    try {
+      const { revogarOutrosAparelhos } = await import("./e2ee.js");
+      await revogarOutrosAparelhos(s);
+    } catch (erro) {
+      console.warn("Não foi possível remover as chaves dos outros aparelhos:", erro?.codigo || erro?.code || erro);
+    }
+
+    const resposta = await fetch(`${URL_BACKEND_HTTP}/sessoes/revogar`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resposta.ok) throw new Error(`revogar respondeu ${resposta.status}`);
+
+    await desvincularEsteAparelho(s);
+    Radar.encerrar();
+    await signOut(auth);
+    await apagarCopiaOffline({ encerrar: true });
+    encerrarSessao();
+    window.location.replace("login.html");
+  } catch (erro) {
+    console.error("Erro ao sair de todos os aparelhos:", erro);
+    Core.aviso("Não foi possível sair de todos os aparelhos agora. Tente de novo em instantes.", "erro");
+    botao.disabled = false;
   }
 }
 
@@ -55,6 +118,8 @@ async function iniciar() {
   if (temaAtual) temaAtual.textContent = nomeDoTema();
   configurarSom();
   document.querySelector('[data-acao="sair"]')?.addEventListener("click", sairDaConta);
+  const btnSairDeTodos = document.querySelector('[data-acao="sair-de-todos"]');
+  btnSairDeTodos?.addEventListener("click", () => sairDeTodosOsAparelhos(btnSairDeTodos));
 
   const s = await sessao();
   montarAvatarNav();

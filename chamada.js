@@ -3,6 +3,7 @@ import Radar from "./radar.js";
 import { registrarEventoDeChamada } from "./mensagens.js";
 import {
   NOME_JANELA_CHAMADA, publicarEstadoDaChamada, limparEstadoDaChamada, ouvirJanelas,
+  consumirIntencaoDeChamada,
 } from "./chamada-flutuante.js";
 
 // ==========================================================================
@@ -21,6 +22,20 @@ const params = new URLSearchParams(window.location.search);
 const outroUsuario = (params.get("u") || "").toLowerCase().trim();
 const apenasAudio = params.get("audio") === "true";
 const souQuemLigou = params.get("papel") !== "receptor";
+
+// A chamada só liga câmera e microfone se foi pedida dentro do app, neste
+// navegador, há poucos segundos (ver chamada-flutuante.js). O número de uso
+// único é consumido aqui e some do endereço.
+const intencaoValida = !!outroUsuario && consumirIntencaoDeChamada({
+  nonce: params.get("n") || "",
+  com: outroUsuario,
+  papel: souQuemLigou ? "emissor" : "receptor",
+  audio: apenasAudio,
+});
+if (params.has("n")) {
+  params.delete("n");
+  try { history.replaceState(null, "", `${location.pathname}?${params.toString()}`); } catch (_) {}
+}
 
 if (!outroUsuario) window.location.replace("inbox.html");
 
@@ -1076,7 +1091,7 @@ ouvirJanelas((dados) => {
 // outro lado, que antes ficava olhando uma imagem congelada até a conexão
 // expirar sozinha.
 function aoSairDaPagina() {
-  if (encerrada) return;
+  if (encerrada || !intencaoValida) return;
   encerrada = true;
   Radar.emit({ type: "cancelar_chamada", to: outroUsuario, content: inicioDaConversa ? "encerrada" : "cancelada" });
   clearInterval(sinalDeVida);
@@ -1100,11 +1115,37 @@ function aplicarFotoDeFundo(url) {
   elWrapper.dataset.fundo = "foto";
 }
 
+/**
+ * Aberta por um link (ou recarregada): nada de câmera, microfone nem sinal
+ * para a outra ponta. Mostra o motivo e volta para a conversa.
+ */
+function recusarChamadaSemIntencao() {
+  encerrada = true;
+  elWrapper.dataset.estado = "encerrada";
+  if (elFimTitulo) elFimTitulo.textContent = "Chamada não iniciada por você";
+  if (elFimDetalhe) {
+    elFimDetalhe.textContent = "Por segurança, a câmera e o microfone só ligam quando você toca em ligar ou atender dentro do app.";
+  }
+  mostrar(elFim, true);
+  if (elStatus) elStatus.textContent = "";
+  setTimeout(() => {
+    if (emJanelaPropria) {
+      window.close();
+    }
+    window.location.replace(outroUsuario ? `chat.html?u=${encodeURIComponent(outroUsuario)}` : "inbox.html");
+  }, 5000);
+}
+
 async function iniciar() {
   // location.replace() não interrompe a execução do script: sem esta saída,
   // iniciar() continuava rodando (e pedindo câmera e microfone) durante o
   // redirecionamento de uma URL sem o parâmetro "u".
   if (!outroUsuario) return;
+
+  if (!intencaoValida) {
+    recusarChamadaSemIntencao();
+    return;
+  }
 
   elWrapper.dataset.tipo = apenasAudio ? "audio" : "video";
   elWrapper.dataset.videoRemoto = "nao";

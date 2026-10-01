@@ -228,7 +228,7 @@ async function carregarSugestoes() {
     const perfis = [];
     for (let i = 0; i < nomes.length; i += 10) {
       const lote = nomes.slice(i, i + 10);
-      const snap = await getDocs(query(collection(db, "usuarios"), where(documentId(), "in", lote)));
+      const snap = await getDocs(query(collection(db, "usuarios"), where(documentId(), "in", lote), limit(10)));
       snap.docs.forEach((d) => {
         const u = d.data();
         if (u.usuario && u.usuario !== sessaoAtual.username) perfis.push(u);

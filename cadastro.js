@@ -3,7 +3,7 @@ import {
   createUserWithEmailAndPassword, deleteUser
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  doc, getDoc, setDoc, serverTimestamp
+  doc, getDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import Core, { AVATAR_PADRAO, configurarCamposDeSenha } from "./core.js";
 
@@ -33,13 +33,20 @@ function mensagemDeErro(codigo) {
     case "auth/invalid-email":
       return "Formato de e-mail inválido.";
     case "auth/weak-password":
-      return "Senha muito fraca. Use ao menos 6 caracteres.";
+    case "auth/password-does-not-meet-requirements":
+      return `Senha fraca. Use ao menos ${SENHA_MINIMA} caracteres, misturando letras e números.`;
+    case "auth/too-many-requests":
+      return "Muitas tentativas. Aguarde um momento.";
     case "auth/network-request-failed":
       return "Sem conexão. Verifique sua internet.";
     default:
       return "Erro ao criar conta. Tente novamente.";
   }
 }
+
+// O Firebase aceita 6; o app pede 8 (recomendação do NIST). A regra de
+// verdade fica na política de senha do Firebase Auth (ver SEGURANCA.md).
+const SENHA_MINIMA = 8;
 
 let enviando = false;
 
@@ -75,10 +82,10 @@ async function fazerCadastro() {
     Core.aviso("O nome de usuário deve ter de 3 a 30 letras, números, ponto, hífen ou _.", "alerta");
     return;
   }
-  if (senha.length < 6) {
+  if (senha.length < SENHA_MINIMA) {
     marcarInvalido(elSenha, true);
     elSenha.focus();
-    Core.aviso("A senha deve ter no mínimo 6 caracteres.", "alerta");
+    Core.aviso(`A senha deve ter no mínimo ${SENHA_MINIMA} caracteres.`, "alerta");
     return;
   }
 
@@ -107,18 +114,27 @@ async function fazerCadastro() {
       return;
     }
 
-    // O uid é o que liga o perfil ao token. Sem ele, as regras do Firestore e
-    // o backend Go não têm como autorizar nada em nome desta conta.
-    await setDoc(ref, {
+    // Perfil público e dados privados nascem juntos, num lote só:
+    //   usuarios/{@}  — o que todo mundo logado vê (sem e-mail);
+    //   contas/{uid}  — e-mail e @, que só a própria pessoa lê.
+    // As regras só aceitam o perfil se contas/{uid} nascer no mesmo lote, e
+    // contas/{uid} só nasce uma vez: um perfil por conta.
+    const lote = writeBatch(db);
+    lote.set(ref, {
       usuario,
       uid: credencial.user.uid,
       nome,
-      email,
       foto: AVATAR_PADRAO,
       bio: "Olá! Estou usando o Sinex Chat.",
       dataCriacao: serverTimestamp(),
       lastSeen: Date.now(),
     });
+    lote.set(doc(db, "contas", credencial.user.uid), {
+      usuario,
+      email: credencial.user.email || email,
+      criadoEm: serverTimestamp(),
+    });
+    await lote.commit();
 
     // O cache de exibição precisa existir ANTES de sair desta página: as telas
     // internas ficam escondidas até a sessão resolver, e a conta recém-criada
@@ -150,10 +166,10 @@ async function fazerCadastro() {
   }
 }
 
-// Força da senha, só como orientação (a regra de verdade é o mínimo de 6).
+// Força da senha, só como orientação (a regra de verdade é o mínimo de 8).
 function avaliarSenha(senha) {
   if (!senha) return { nivel: 0, texto: "Use 8 ou mais caracteres, misturando letras e números." };
-  if (senha.length < 6) return { nivel: 1, texto: `Faltam ${6 - senha.length} caractere(s) para o mínimo.` };
+  if (senha.length < SENHA_MINIMA) return { nivel: 1, texto: `Faltam ${SENHA_MINIMA - senha.length} caractere(s) para o mínimo.` };
   let pontos = 0;
   if (senha.length >= 8) pontos++;
   if (senha.length >= 12) pontos++;

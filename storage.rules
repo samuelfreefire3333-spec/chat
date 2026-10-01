@@ -1,9 +1,22 @@
 rules_version = '2';
 
-// Regras do Firebase Storage.
+// ==========================================================================
+// Regras do Firebase Storage — Sinex Chat
+// ==========================================================================
+// Fotos e áudios das conversas são PRIVADOS: ficam em midia/{chatId}/{uid}/…
+// e só quem participa da conversa baixa, conferido no Firestore a cada
+// download (regra entre serviços). O app baixa com getBlob() — nunca guarda
+// nem mostra o link com token (getDownloadURL), que funcionaria sem login e
+// para sempre.
 //
-// Cada arquivo mora sob o uid de quem enviou, então a permissão de escrita é
-// decidida pelo próprio caminho — sem depender de nada vindo do cliente.
+// O Storage não enxerga o conteúdo do arquivo: tipo e tamanho são conferidos
+// aqui, e a assinatura real (magic bytes) é conferida no aparelho de quem
+// recebe antes de exibir (midia.js). Arquivos cifrados de ponta a ponta sobem
+// como application/octet-stream.
+//
+// Primeira publicação destas regras: o Console pede para dar ao Storage
+// permissão de ler o Firestore (papel "Firebase Rules Firestore Service
+// Agent"). Aceite — é o que faz participante() funcionar.
 
 service firebase.storage {
   match /b/{bucket}/o {
@@ -16,34 +29,61 @@ service firebase.storage {
       return autenticado() && request.auth.uid == uid;
     }
 
-    function ehImagem() {
-      return request.resource.contentType.matches('image/.*');
+    function participante(chatId) {
+      return autenticado()
+        && request.auth.uid in firestore.get(/databases/(default)/documents/chats/$(chatId)).data.uids;
     }
 
-    function ehAudio() {
-      return request.resource.contentType.matches('audio/.*');
+    function nomeAleatorio(arquivo) {
+      return arquivo.matches('^[A-Za-z0-9-]{36}$');
     }
 
-    function ateMB(n) {
-      return request.resource.size < n * 1024 * 1024;
+    function tipoEPesoDeMidia() {
+      return request.resource.size > 0
+        && ((request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+            && request.resource.size < 10 * 1024 * 1024)
+          || (request.resource.contentType in ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac']
+            && request.resource.size < 15 * 1024 * 1024)
+          || (request.resource.contentType == 'application/octet-stream'
+            && request.resource.size < 16 * 1024 * 1024));
     }
 
-    // Foto de perfil: 5 MB, só imagem.
+    // Foto de perfil: o perfil é público para quem está logado, então a foto
+    // também. Só JPEG (o app sempre reprocessa a imagem no navegador, o que
+    // também apaga EXIF/GPS), nome aleatório e sem sobrescrever.
     match /avatares/{uid}/{arquivo} {
-      allow read: if autenticado();
-      allow write: if souDono(uid) && ehImagem() && ateMB(5);
+      allow get: if autenticado();
+      allow list: if false;
+      allow create: if souDono(uid)
+        && arquivo.matches('^[A-Za-z0-9-]{36}[.]jpg$')
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.size > 0
+        && request.resource.size < 2 * 1024 * 1024;
+      allow update: if false;
+      allow delete: if souDono(uid);
     }
 
-    // Áudio de mensagem: 15 MB.
-    match /audios/{uid}/{arquivo=**} {
-      allow read: if autenticado();
-      allow write: if souDono(uid) && ehAudio() && ateMB(15);
+    // Mídia das conversas.
+    match /midia/{chatId}/{uid}/{arquivo} {
+      allow get: if participante(chatId);
+      allow list: if false;
+      allow create: if souDono(uid)
+        && participante(chatId)
+        && nomeAleatorio(arquivo)
+        && tipoEPesoDeMidia();
+      allow update: if false;
+      allow delete: if souDono(uid);
     }
 
-    // Imagem enviada no chat: 10 MB.
-    match /imagens/{uid}/{arquivo=**} {
-      allow read: if autenticado();
-      allow write: if souDono(uid) && ehImagem() && ateMB(10);
+    // Caminhos antigos (avatares com Date.now(), imagens/ e audios/): nada novo
+    // entra e ninguém gera link novo. O que já existe continua acessível só
+    // pelo link gravado na mensagem, até a migração (cmd/migrar-seguranca)
+    // mover o arquivo para midia/ e revogar o link.
+    match /imagens/{caminho=**} {
+      allow read, write: if false;
+    }
+    match /audios/{caminho=**} {
+      allow read, write: if false;
     }
 
     match /{caminho=**} {

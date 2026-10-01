@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Segredos — nunca entram no repositório
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+# Chaves de service account do Google/Firebase (o firebase-key.json já vazou
+# uma vez por estar na pasta publicada).
+firebase-key*.json
+*serviceAccount*.json
+*service-account*.json
+*-adminsdk-*.json
+credentials*.json
+gha-creds-*.json
+
+# ---------------------------------------------------------------------------
+# Build e ferramentas
+# ---------------------------------------------------------------------------
+dist/
+node_modules/
+testes/regras/node_modules/
+*.log
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+.firebase/
+coverage/
+
+# Binários do Go
+/sinexchat
+/backend
+*.exe
+*.test
+*.out
+
+# Sistema e editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

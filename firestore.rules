@@ -1,31 +1,31 @@
 rules_version = '2';
 
-// Regras de segurança do Sinex Chat.
+// ==========================================================================
+// Regras de segurança do Sinex Chat — Firestore
+// ==========================================================================
+// O navegador fala direto com o Firestore: estas regras — e não o JavaScript —
+// são a barreira real. Tudo aqui se apoia no uid do token do Firebase Auth.
 //
-// Todo o acesso ao banco vem direto do navegador; estas regras — e não o
-// JavaScript — são a barreira real. Nada aqui pode depender de checagem feita
-// no cliente.
-//
-// Esta versão junta as regras publicadas em 17/09/2026 com as do repositório e
-// corrige estes problemas:
-//   1. Editar o perfil falhava para quem não tinha o campo "status" (a regra
-//      publicada comparava resource.data.status, e ler campo inexistente é
-//      erro — erro nas regras é recusa).
-//   2. Qualquer pessoa podia criar a conversa "ana_bruno" antes dos dois,
-//      incluindo o próprio uid, e ler tudo o que eles conversassem depois.
-//      Agora a conversa direta só nasce com os uids das duas pessoas do ID.
-//   3. Qualquer participante podia reescrever qualquer campo da conversa e
-//      das mensagens (inclusive o texto de mensagens dos outros), mandar
-//      mensagem com o @ de outra pessoa e criar "seguir" em nome de outra
-//      conta. Agora cada um só mexe no que é seu.
-//   4. A coleção "chamadas" estava aberta a leitura e escrita de qualquer
-//      pessoa logada, sem que nada no app a usasse.
+// Princípios:
+//   - negação por padrão (o último bloco nega o que não foi declarado);
+//   - cada escrita tem LISTA FECHADA de campos, com tipo e tamanho conferidos;
+//   - horários vêm do servidor (request.time), nunca do aparelho;
+//   - ninguém escreve em nome de outra pessoa (uid e @ conferidos no perfil);
+//   - quem não participa de uma conversa não lê, não escreve e não descobre
+//     se ela existe;
+//   - o admin só faz o que o painel precisa (moderar perfil), sem ler conversas.
 //
 // O backend Go usa o Admin SDK, que não passa por estas regras (lastSeen,
-// uid e status de contas antigas são gravados por ele).
+// uid/status de contas antigas, contas/{uid} e banimento são gravados por ele).
+//
+// Histórico das correções: ver SEGURANCA.md.
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------
+    // Funções de apoio
+    // ------------------------------------------------------------------
 
     function autenticado() {
       return request.auth != null;
@@ -49,71 +49,153 @@ service cloud.firestore {
       return /databases/$(database)/documents/usuarios/$(nome);
     }
 
-    // O @ informado é de quem está escrevendo. Perfis antigos cujo ID de
-    // documento não é o próprio @ não têm como ser conferidos aqui; para não
-    // travar essas contas, um @ sem documento passa.
-    function ehMeuNome(nome) {
-      return nome is string && nome.size() > 0
-        && (!exists(perfil(nome)) || get(perfil(nome)).data.get('uid', null) == meuUID());
+    function conta(uid) {
+      return /databases/$(database)/documents/contas/$(uid);
     }
 
-    // ==========================================================
-    // 1. PERFIS
-    // ==========================================================
+    // Formato de @ para contas novas (o mesmo do cadastro).
+    function usernameNovo(nome) {
+      return nome is string && nome.matches('^[a-z0-9._-]{3,30}$');
+    }
+
+    // Formato de @ aceito em qualquer referência (contas antigas incluídas).
+    function usernameSeguro(nome) {
+      return nome is string && nome.matches('^[a-z0-9._-]{1,64}$');
+    }
+
+    // O @ informado é de quem está escrevendo: pelo perfil (uid) ou, para
+    // perfis antigos cujo ID de documento não é o próprio @, por contas/{uid}
+    // (gravada pelo backend na primeira conexão). A versão anterior aceitava
+    // qualquer @ SEM perfil — dava para assinar mensagens como "admin".
+    function ehMeuNome(nome) {
+      return usernameSeguro(nome)
+        && ((exists(perfil(nome)) && get(perfil(nome)).data.get('uid', null) == meuUID())
+          || (exists(conta(meuUID())) && get(conta(meuUID())).data.get('usuario', null) == nome));
+    }
+
+    function nomeValido(nome) {
+      return nome is string && nome.size() > 0 && nome.size() <= 60;
+    }
+
+    function bioValida(bio) {
+      return bio is string && bio.size() <= 200;
+    }
+
+    // Foto de perfil: vazia, o avatar padrão do app ou um arquivo DA PRÓPRIA
+    // pessoa no bucket do projeto. Antes aceitava qualquer URL (rastreador,
+    // imagem hospedada por terceiros).
+    function fotoValida(foto, uid) {
+      return foto is string && foto.size() <= 2048
+        && (foto == ''
+          || foto == '/assets/avatar-padrao.svg'
+          || foto.matches('^https://firebasestorage[.]googleapis[.]com/v0/b/chat-parameuamor[.]firebasestorage[.]app/o/avatares%2F'
+              + uid + '%2F[A-Za-z0-9._-]{1,80}[?]alt=media&token=[A-Za-z0-9-]{1,64}$'));
+    }
+
+    // Mensagens automáticas de chamada (radar.js e chamada.js). Qualquer
+    // outro texto de "sistema" seria golpe com cara de aviso oficial.
+    function textoDeSistema(t) {
+      return t is string
+        && t.matches('^(📞 Chamada de voz|📹 Chamada de vídeo)( recusada| não atendida| · ([0-9]{1,3}:)?[0-9]{2}:[0-9]{2})$');
+    }
+
+    // ==================================================================
+    // 1. PERFIS — usuarios/{@}
+    // ==================================================================
+    // Público para quem está logado (busca, contatos, perfil). Dados
+    // privados (e-mail) moram em contas/{uid}, que só o dono lê.
     match /usuarios/{username} {
-      // Público para quem está logado (busca, lista de contatos, perfil).
-      allow read: if autenticado();
+      allow get: if autenticado();
 
-      // Cadastro: o documento é de quem cria, o ID é o nome de usuário, o
-      // e-mail é o do token e ninguém nasce admin, banido ou com status.
+      // Busca paginada. O teto impede baixar a base inteira de uma vez.
+      allow list: if ehAdmin() || (autenticado() && request.query.limit <= 50);
+
+      // Cadastro: o perfil nasce no MESMO lote que contas/{uid}, que só pode
+      // ser criada uma vez — logo, um perfil por conta. Lista fechada de
+      // campos; ninguém nasce admin, banido ou com status; e-mail não entra.
       allow create: if autenticado()
-        && request.resource.data.uid == meuUID()
+        && usernameNovo(username)
+        && request.resource.data.keys().hasOnly(['usuario', 'uid', 'nome', 'foto', 'bio', 'dataCriacao', 'lastSeen'])
         && request.resource.data.usuario == username
-        && username.matches('^[a-z0-9._-]{3,30}$')
-        && request.resource.data.get('email', '') == request.auth.token.get('email', '')
-        && !request.resource.data.keys().hasAny(['role', 'status', 'banido', 'admin']);
+        && request.resource.data.uid == meuUID()
+        && nomeValido(request.resource.data.nome)
+        && bioValida(request.resource.data.get('bio', ''))
+        && fotoValida(request.resource.data.get('foto', ''), meuUID())
+        && request.resource.data.dataCriacao == request.time
+        && request.resource.data.get('lastSeen', 0) is int
+        && !exists(conta(meuUID()))
+        && getAfter(conta(meuUID())).data.usuario == username;
 
-      function textoAte(campo, maximo) {
-        return !(campo in mudou())
-          || (request.resource.data[campo] is string && request.resource.data[campo].size() <= maximo);
-      }
-
-      // O dono edita nome, bio e foto (lastSeen continua liberado para
-      // versões antigas do app ainda em cache). uid, e-mail, usuario e
-      // status ficam travados; o admin modera qualquer conta.
-      // Dono: pelo uid; em conta antiga ainda sem uid (o backend grava na
-      // primeira conexão, que demora se o servidor estiver dormindo), pelo
-      // e-mail do token.
+      // Dono: pelo uid; em conta antiga ainda sem uid, pelo e-mail do token
+      // (o backend grava o uid na primeira conexão).
       function souODono() {
         return resource.data.get('uid', null) == meuUID()
           || (resource.data.get('uid', null) == null
             && resource.data.get('email', '') != ''
+            && request.auth.token.get('email_verified', false) == true
             && resource.data.get('email', '') == request.auth.token.get('email', ''));
       }
 
+      // O dono edita nome, bio e foto (lastSeen continua liberado para
+      // versões antigas do app ainda em cache). uid, @, e-mail e status ficam
+      // travados.
+      allow update: if autenticado()
+        && souODono()
+        && mudou().hasOnly(['nome', 'bio', 'foto', 'lastSeen'])
+        && (!('nome' in mudou()) || nomeValido(request.resource.data.nome))
+        && (!('bio' in mudou()) || bioValida(request.resource.data.bio))
+        && (!('foto' in mudou()) || fotoValida(request.resource.data.foto, meuUID()))
+        && (!('lastSeen' in mudou()) || request.resource.data.lastSeen is int);
+
+      // O admin modera: status, e limpar nome/bio/foto abusivos. Nunca uid,
+      // @ ou e-mail.
       allow update: if ehAdmin()
-        || (autenticado()
-          && souODono()
-          && mudou().hasOnly(['nome', 'bio', 'foto', 'lastSeen'])
-          && textoAte('nome', 60)
-          && (!('nome' in mudou()) || request.resource.data.nome.size() > 0)
-          && textoAte('bio', 200)
-          && textoAte('foto', 2048));
+        && mudou().hasOnly(['status', 'nome', 'bio', 'foto'])
+        && (!('status' in mudou()) || request.resource.data.status in ['ativo', 'suspenso', 'banido'])
+        && (!('nome' in mudou()) || nomeValido(request.resource.data.nome))
+        && (!('bio' in mudou()) || bioValida(request.resource.data.bio))
+        && (!('foto' in mudou()) || request.resource.data.foto in ['', '/assets/avatar-padrao.svg']);
 
       allow delete: if ehAdmin();
     }
 
-    // ==========================================================
-    // 2. SEGUIDORES — ID "{seguidor}_{seguindo}", sem duplicar
-    // ==========================================================
+    // ==================================================================
+    // 2. DADOS PRIVADOS DA CONTA — contas/{uid}
+    // ==================================================================
+    // { usuario, email, criadoEm }. Só o dono (e o admin, para suporte) lê.
+    // Nasce uma vez, junto com o perfil, e não muda mais pelo app.
+    match /contas/{uid} {
+      allow get: if autenticado() && (meuUID() == uid || ehAdmin());
+      allow list: if false;
+
+      allow create: if autenticado()
+        && meuUID() == uid
+        && request.resource.data.keys().hasOnly(['usuario', 'email', 'criadoEm'])
+        && usernameNovo(request.resource.data.usuario)
+        && request.resource.data.criadoEm == request.time
+        && (!('email' in request.resource.data)
+          || request.resource.data.email == request.auth.token.get('email', ''))
+        && !exists(perfil(request.resource.data.usuario))
+        && getAfter(perfil(request.resource.data.usuario)).data.uid == uid;
+
+      allow update, delete: if false;
+    }
+
+    // ==================================================================
+    // 3. SEGUIDORES — ID "{seguidor}_{seguindo}", sem duplicar
+    // ==================================================================
     match /seguidores/{arestaId} {
       allow read: if autenticado();
 
       allow create: if autenticado()
+        && request.resource.data.keys().hasOnly(['seguidor', 'seguidorUid', 'seguindo', 'criadoEm'])
         && request.resource.data.seguidorUid == meuUID()
+        && usernameSeguro(request.resource.data.seguindo)
         && arestaId == request.resource.data.seguidor + '_' + request.resource.data.seguindo
         && request.resource.data.seguidor != request.resource.data.seguindo
-        && ehMeuNome(request.resource.data.seguidor);
+        && request.resource.data.criadoEm == request.time
+        && ehMeuNome(request.resource.data.seguidor)
+        && exists(perfil(request.resource.data.seguindo));
 
       allow delete: if autenticado() && resource.data.seguidorUid == meuUID();
 
@@ -121,109 +203,263 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    // ==========================================================
-    // 3. CONVERSAS E MENSAGENS
-    // ==========================================================
+    // ==================================================================
+    // 4. CHAVES PÚBLICAS DA CRIPTOGRAFIA DE PONTA A PONTA
+    // ==================================================================
+    // chavesPublicas/{uid}/dispositivos/{id}: só a parte PÚBLICA das chaves
+    // de cada aparelho. A chave privada nunca sai do aparelho (e2ee.js).
+    // Não se edita: rotação = aparelho novo; revogação = apagar.
+    match /chavesPublicas/{uid}/dispositivos/{dispositivo} {
+      allow get: if autenticado();
+      allow list: if autenticado() && request.query.limit <= 50;
+
+      allow create: if autenticado()
+        && meuUID() == uid
+        && dispositivo.matches('^[A-Za-z0-9-]{36}$')
+        && request.resource.data.keys().hasOnly(['v', 'kem', 'sig', 'nome', 'criadoEm'])
+        && request.resource.data.v == 1
+        && request.resource.data.kem is string && request.resource.data.kem.matches('^[A-Za-z0-9_-]{80,100}$')
+        && request.resource.data.sig is string && request.resource.data.sig.matches('^[A-Za-z0-9_-]{80,100}$')
+        && request.resource.data.criadoEm == request.time
+        && (!('nome' in request.resource.data)
+          || (request.resource.data.nome is string && request.resource.data.nome.size() <= 60));
+
+      allow update: if false;
+      allow delete: if autenticado() && (meuUID() == uid || ehAdmin());
+    }
+
+    // ==================================================================
+    // 5. CONVERSAS E MENSAGENS
+    // ==================================================================
     match /chats/{chatId} {
       function souParticipante() {
         return autenticado() && meuUID() in resource.data.uids;
       }
 
+      function tiposDeMensagem() {
+        return ['texto', 'imagem', 'audio', 'sistema', 'cifrada'];
+      }
+
       // Conversa direta: exatamente as duas pessoas do ID ("a_b", os dois @
-      // em ordem) e os uids são os DELAS, conferidos no perfil. Sem isto,
-      // alguém podia criar "ana_bruno" antes deles, com o próprio uid junto,
-      // e ler tudo o que os dois conversassem depois.
+      // em ordem) e os uids são os DELAS, conferidos no perfil. Lista fechada
+      // de campos: não dá para nascer com leituras/entregas de outra pessoa.
       function diretoHonesto() {
         let d = request.resource.data;
-        return d.uids.size() == 2
+        return d.keys().hasOnly(['tipo', 'usuarios', 'uids', 'criadoEm', 'timestamp', 'ultimaMensagem'])
+          && d.get('tipo', 'direto') == 'direto'
+          && d.uids is list && d.usuarios is list
+          && d.uids.size() == 2
           && d.usuarios.size() == 2
+          && d.uids[0] != d.uids[1]
           && d.usuarios[0] < d.usuarios[1]
           && chatId == d.usuarios[0] + '_' + d.usuarios[1]
           && get(perfil(d.usuarios[0])).data.get('uid', null) in d.uids
-          && get(perfil(d.usuarios[1])).data.get('uid', null) in d.uids;
+          && get(perfil(d.usuarios[1])).data.get('uid', null) in d.uids
+          && d.criadoEm == request.time
+          && d.timestamp == request.time
+          && d.ultimaMensagem == '';
       }
 
-      // Grupo: ID aleatório do Firestore (nunca um "a_b" de conversa direta),
-      // de 3 a 20 pessoas.
+      // Grupo: ID aleatório do Firestore (nunca um "a_b"), de 3 a 20 pessoas
+      // sem repetição, criado por quem diz que criou. Os uids são o que
+      // autoriza; a lista de @ é só exibição (o app confere contra os perfis).
       function grupoHonesto() {
         let d = request.resource.data;
-        return chatId.matches('^[A-Za-z0-9]{20}$')
+        return d.keys().hasOnly(['tipo', 'nome', 'usuarios', 'uids', 'criadoPor', 'criadoPorUid', 'criadoEm', 'timestamp', 'ultimaMensagem', 'ultimoRemetente'])
+          && d.tipo == 'grupo'
+          && chatId.matches('^[A-Za-z0-9]{20}$')
+          && nomeValido(d.nome)
+          && d.uids is list && d.usuarios is list
           && d.uids.size() >= 3
           && d.uids.size() <= 20
-          && d.usuarios.size() == d.uids.size();
+          && d.usuarios.size() == d.uids.size()
+          && d.uids.toSet().size() == d.uids.size()
+          && d.usuarios.toSet().size() == d.usuarios.size()
+          && d.criadoPorUid == meuUID()
+          && d.criadoPor in d.usuarios
+          && ehMeuNome(d.criadoPor)
+          && d.criadoEm == request.time
+          && d.timestamp == request.time
+          && d.ultimaMensagem == ''
+          && d.get('ultimoRemetente', '') == '';
       }
 
-      // O resumo da última mensagem só muda junto com uma mensagem de
-      // verdade: hora do servidor e remetente = quem escreve.
+      // O resumo da última mensagem só muda com hora do servidor, remetente =
+      // quem escreve, tipo conhecido e tamanho limitado. Numa conversa
+      // protegida, o resumo nunca carrega o texto.
       function resumoHonesto() {
+        let d = request.resource.data;
         return !mudou().hasAny(['ultimaMensagem', 'ultimoRemetente', 'ultimoTipo', 'timestamp'])
-          || (request.resource.data.timestamp == request.time
-            && ehMeuNome(request.resource.data.get('ultimoRemetente', '')));
+          || (d.timestamp == request.time
+            && ehMeuNome(d.ultimoRemetente)
+            && d.ultimaMensagem is string
+            && d.ultimaMensagem.size() <= 400
+            && d.ultimoTipo in tiposDeMensagem()
+            && (d.ultimoTipo != 'sistema' || textoDeSistema(d.ultimaMensagem))
+            && (resource.data.get('e2ee', null) == null
+              || d.ultimoTipo == 'sistema'
+              || d.ultimaMensagem == '🔒 Mensagem protegida'));
       }
 
-      // Em entregas/leituras cada pessoa só grava a própria marca.
+      // Em entregas/leituras cada pessoa só grava a própria marca, e nunca no
+      // futuro (uma marca em 2099 faria toda mensagem nova aparecer como
+      // "vista" para quem enviou). A folga cobre relógio de aparelho adiantado.
       function soAMinhaMarca(campo) {
         return !(campo in mudou())
           || (request.resource.data.get(campo, {}).diff(resource.data.get(campo, {})).affectedKeys().hasOnly([meuUID()])
-            && request.resource.data[campo][meuUID()] is timestamp);
+            && request.resource.data[campo][meuUID()] is timestamp
+            && request.resource.data[campo][meuUID()] <= request.time + duration.value(10, 'm'));
+      }
+
+      // Proteção de ponta a ponta: liga uma vez, numa conversa direta, e não
+      // desliga (um participante não pode rebaixar a conversa em silêncio).
+      function e2eeHonesto() {
+        return !('e2ee' in mudou())
+          || (resource.data.get('e2ee', null) == null
+            && resource.data.get('tipo', 'direto') != 'grupo'
+            && request.resource.data.e2ee.keys().hasOnly(['ativo', 'ativadoPor', 'desde'])
+            && request.resource.data.e2ee.ativo == true
+            && request.resource.data.e2ee.ativadoPor == meuUID()
+            && request.resource.data.e2ee.desde == request.time);
+      }
+
+      // Conversa direta: qualquer um dos dois apaga (o app avisa que é para
+      // os dois). Grupo: só quem criou — antes qualquer membro apagava o grupo
+      // inteiro de todo mundo.
+      function podeApagar(chat) {
+        return chat.get('tipo', 'direto') != 'grupo'
+          || chat.get('criadoPorUid', '') == meuUID()
+          || (chat.get('criadoPorUid', '') == '' && ehMeuNome(chat.get('criadoPor', '')));
       }
 
       // Só quem participa lê. Uma conversa que ainda não existe também é
       // "sem permissão" — de propósito: devolver "não existe" deixaria
       // qualquer um descobrir se duas outras pessoas conversam (o ID é feito
-      // dos dois @). O garantirChat do app já trata essa recusa como "ainda
-      // não existe" e cria a conversa. O admin lê para o contador do painel.
-      allow get, list: if souParticipante() || ehAdmin();
+      // dos dois @). O admin NÃO lê conversas: o painel conta pelo backend.
+      allow get, list: if souParticipante();
 
       allow create: if autenticado()
         && meuUID() in request.resource.data.uids
         && ((request.resource.data.get('tipo', 'direto') == 'grupo' && grupoHonesto())
           || (request.resource.data.get('tipo', 'direto') != 'grupo' && diretoHonesto()));
 
-      // Participantes e membros não mudam depois de criados; o resto é o
-      // resumo da última mensagem e as marcas de entrega/leitura.
+      // Participantes e membros não mudam depois de criados.
       allow update: if souParticipante()
         && request.resource.data.uids == resource.data.uids
         && request.resource.data.get('usuarios', []) == resource.data.get('usuarios', [])
-        && mudou().hasOnly(['ultimaMensagem', 'ultimoRemetente', 'ultimoTipo', 'timestamp', 'entregas', 'leituras'])
+        && mudou().hasOnly(['ultimaMensagem', 'ultimoRemetente', 'ultimoTipo', 'timestamp', 'entregas', 'leituras', 'e2ee'])
         && resumoHonesto()
         && soAMinhaMarca('entregas')
-        && soAMinhaMarca('leituras');
+        && soAMinhaMarca('leituras')
+        && e2eeHonesto();
 
-      allow delete: if souParticipante();
+      allow delete: if souParticipante() && podeApagar(resource.data);
 
       match /mensagens/{mensagemId} {
+        function chatAtual() {
+          return get(/databases/$(database)/documents/chats/$(chatId)).data;
+        }
+
         function participanteDoChat() {
-          return autenticado()
-            && meuUID() in get(/databases/$(database)/documents/chats/$(chatId)).data.uids;
+          return autenticado() && meuUID() in chatAtual().uids;
+        }
+
+        function protegida() {
+          return chatAtual().get('e2ee', null) != null;
+        }
+
+        // Resposta a outra mensagem: prévia curta, sem campos extras.
+        function respostaValida(m) {
+          return !('respostaId' in m)
+            || (m.respostaId is string && m.respostaId.matches('^[A-Za-z0-9]{1,40}$')
+              && (!('respostaAutor' in m) || usernameSeguro(m.respostaAutor))
+              && (!('respostaTexto' in m) || (m.respostaTexto is string && m.respostaTexto.size() <= 400))
+              && (!('respostaTipo' in m) || m.respostaTipo in tiposDeMensagem()));
+        }
+
+        // Foto ou áudio: o arquivo está no Storage, na pasta DESTA conversa e
+        // DE QUEM ENVIA, com nome aleatório. Nada de URL (link público).
+        function midiaValida(md, tipo) {
+          let partes = md.caminho.split('/');
+          return md is map
+            && md.keys().hasOnly(['caminho', 'mime', 'tamanho', 'duracao', 'largura', 'altura'])
+            && md.caminho is string
+            && partes.size() == 4
+            && partes[0] == 'midia'
+            && partes[1] == chatId
+            && partes[2] == meuUID()
+            && partes[3].matches('^[A-Za-z0-9-]{36}$')
+            && md.mime is string
+            && (tipo == 'imagem'
+              ? md.mime in ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+              : md.mime in ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac'])
+            && (!('tamanho' in md) || (md.tamanho is int && md.tamanho > 0 && md.tamanho <= 16777216))
+            && (!('duracao' in md) || (md.duracao is int && md.duracao >= 0 && md.duracao <= 600000))
+            && (!('largura' in md) || (md.largura is int && md.largura > 0 && md.largura <= 10000))
+            && (!('altura' in md) || (md.altura is int && md.altura > 0 && md.altura <= 10000));
+        }
+
+        // Conteúdo cifrado no aparelho (e2ee.js). O servidor só vê o envelope.
+        function envelopeValido(e) {
+          return e is map
+            && e.keys().hasOnly(['v', 'dispositivo', 'iv', 'ct', 'chaves', 'sig'])
+            && e.v == 1
+            && e.dispositivo is string && e.dispositivo.matches('^[A-Za-z0-9-]{36}$')
+            && e.iv is string && e.iv.size() <= 32
+            && e.ct is string && e.ct.size() > 0 && e.ct.size() <= 262144
+            && e.chaves is map && e.chaves.size() >= 1 && e.chaves.size() <= 64
+            && e.sig is string && e.sig.size() <= 200;
+        }
+
+        function conteudoValido(m) {
+          return (m.tipo == 'texto' && !protegida()
+              && m.texto is string && m.texto.size() > 0 && m.texto.size() <= 8000
+              && !m.keys().hasAny(['midia', 'e2ee']))
+            || (m.tipo == 'sistema'
+              && textoDeSistema(m.texto)
+              && !m.keys().hasAny(['midia', 'e2ee', 'respostaId', 'respostaAutor', 'respostaTexto', 'respostaTipo']))
+            || ((m.tipo == 'imagem' || m.tipo == 'audio') && !protegida()
+              && m.get('texto', '') == ''
+              && !('e2ee' in m)
+              && midiaValida(m.midia, m.tipo))
+            || (m.tipo == 'cifrada' && protegida()
+              && envelopeValido(m.e2ee)
+              && !m.keys().hasAny(['texto', 'midia', 'respostaAutor', 'respostaTexto', 'respostaTipo']));
         }
 
         allow read: if participanteDoChat();
 
-        // Ninguém manda mensagem em nome de outra pessoa (nem o uid nem o @
-        // exibido no grupo), e a hora é a do servidor (serverTimestamp), não
-        // a do aparelho — senão dava para "fixar" mensagem no fim da conversa.
+        // Ninguém manda mensagem em nome de outra pessoa (nem o uid nem o @),
+        // a hora é a do servidor e o conteúdo tem forma e tamanho conferidos.
         allow create: if participanteDoChat()
+          && request.resource.data.keys().hasOnly(['remetente', 'remetenteUid', 'texto', 'tipo', 'timestamp',
+              'respostaId', 'respostaAutor', 'respostaTexto', 'respostaTipo', 'midia', 'e2ee'])
           && request.resource.data.remetenteUid == meuUID()
           && ehMeuNome(request.resource.data.get('remetente', ''))
-          && request.resource.data.timestamp == request.time;
+          && request.resource.data.timestamp == request.time
+          && request.resource.data.tipo in tiposDeMensagem()
+          && respostaValida(request.resource.data)
+          && conteudoValido(request.resource.data);
 
         // Mensagem enviada não se reescreve; o único campo que muda é a
-        // reação — e cada um só mexe na própria.
+        // reação — cada um só mexe na própria, com um emoji curto.
         allow update: if participanteDoChat()
           && mudou().hasOnly(['reacoes'])
-          && request.resource.data.get('reacoes', {}).diff(resource.data.get('reacoes', {})).affectedKeys().hasOnly([meuUID()]);
+          && request.resource.data.get('reacoes', {}).diff(resource.data.get('reacoes', {})).affectedKeys().hasOnly([meuUID()])
+          && (!(meuUID() in request.resource.data.get('reacoes', {}))
+            || (request.resource.data.reacoes[meuUID()] is string
+              && request.resource.data.reacoes[meuUID()].size() > 0
+              && request.resource.data.reacoes[meuUID()].size() <= 16));
 
-        // Qualquer participante apaga: "apagar conversa" remove as mensagens
-        // em lotes, e um lote é tudo-ou-nada — se só o remetente pudesse
-        // apagar, bastava uma mensagem da outra pessoa para nada ser apagado.
-        allow delete: if participanteDoChat();
+        // Apagar acompanha a conversa: na direta, qualquer um dos dois
+        // ("apagar conversa" remove as mensagens em lotes, e um lote é
+        // tudo-ou-nada); no grupo, só quem o criou.
+        allow delete: if participanteDoChat() && podeApagar(chatAtual());
       }
     }
 
-    // A coleção "chamadas" das regras publicadas saiu: a sinalização de
-    // chamada é só pelo WebSocket, nada no app grava ali — e ela estava
-    // aberta para leitura e escrita de qualquer pessoa logada.
+    // A coleção "chamadas" das regras antigas saiu: a sinalização de chamada
+    // é só pelo WebSocket.
 
     // Qualquer coisa não declarada acima é negada.
     match /{document=**} {

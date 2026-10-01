@@ -3,7 +3,7 @@
 // Suba este número a cada publicação. Sem isso — e sem o handler de activate
 // que existia antes — o cache antigo nunca era removido e quem já tinha
 // instalado o app continuava com o HTML velho até limpar os dados do site.
-const VERSAO = "v9";
+const VERSAO = "v10";
 const CACHE_ESTATICO = `sinex-estatico-${VERSAO}`;
 
 const ARQUIVOS = [
@@ -48,6 +48,11 @@ const ARQUIVOS = [
   "/radar.js",
   "/mensagens.js",
   "/chamada-flutuante.js",
+  "/midia.js",
+  "/midia-validacao.js",
+  "/e2ee.js",
+  "/e2ee-cripto.js",
+  "/vendor/hpke-1.9.0.js",
 
   // Um módulo por tela
   "/index.js",

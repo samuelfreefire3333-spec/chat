@@ -1,0 +1,6 @@
+# Biblioteca de terceiros com SHA-256 conferido no cabeçalho: o Git não pode
+# trocar o fim de linha dela (o hash é calculado com LF).
+vendor/** -text
+
+# Dados de teste binários/fixos.
+testes/dados/** -text

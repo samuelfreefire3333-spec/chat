@@ -431,7 +431,7 @@ async function carregarListaDeUsuarios(tipo) {
     let perfis = [];
 
     try {
-      const snap = await getDocs(query(collection(db, "usuarios"), where(documentId(), "in", lote)));
+      const snap = await getDocs(query(collection(db, "usuarios"), where(documentId(), "in", lote), limit(20)));
       const porId = new Map(snap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
       // Mantém a ordem da consulta e não some com quem não tem perfil.
       perfis = lote.map((u) => porId.get(u) || { id: u, usuario: u, nome: "" });

@@ -106,18 +106,22 @@ async function alterarStatus(usuario, novoStatus, btn, card) {
   btn.disabled = true;
 
   try {
+    // 1) Perfil: vale na hora (as regras deixam o admin mudar só o status) e
+    //    o backend já recusa o próximo WebSocket dessa conta.
     await updateDoc(doc(db, "usuarios", usuario), { status: novoStatus });
 
-    // Além de bloquear a PRÓXIMA tentativa de handshake (Identity.Verificar
-    // já recusava conta banida/suspensa), avisamos o backend pra derrubar
-    // AGORA qualquer aba que a pessoa já tenha aberta. Sem isso, quem já
-    // estava conectado seguia normalmente até o token expirar (até 1h).
-    if (banindo) await desconectarSessaoAtiva(usuario);
+    // 2) Backend: desativa (ou reativa) a conta no Firebase Auth, revoga as
+    //    sessões e derruba as conexões abertas. Sem isto a conta banida
+    //    continuava lendo e escrevendo no Firestore com o token que já tinha.
+    const confirmado = await aplicarStatusNoServidor(usuario, novoStatus);
 
-    Core.aviso(
-      banindo ? `@${usuario} foi banido.` : `@${usuario} foi reativado.`,
-      "sucesso"
-    );
+    if (confirmado) {
+      Core.aviso(banindo ? `@${usuario} foi banido.` : `@${usuario} foi reativado.`, "sucesso");
+    } else {
+      Core.aviso(banindo
+        ? `@${usuario} foi marcado como banido, mas o servidor não confirmou a revogação das sessões. Tente de novo.`
+        : `@${usuario} foi marcado como ativo, mas o servidor não reativou a conta de login. Tente de novo.`, "alerta");
+    }
 
     card.replaceWith(cartaoDeUsuario({
       usuario,
@@ -132,27 +136,33 @@ async function alterarStatus(usuario, novoStatus, btn, card) {
   }
 }
 
+async function chamarBackend(caminho, { metodo = "POST", corpo = null } = {}) {
+  const token = await sessaoAtual.user.getIdToken();
+  const opcoes = { method: metodo, headers: { Authorization: `Bearer ${token}` } };
+  if (corpo) {
+    opcoes.headers["Content-Type"] = "application/json";
+    opcoes.body = JSON.stringify(corpo);
+  }
+  return fetch(`${URL_BACKEND_HTTP}${caminho}`, opcoes);
+}
+
 /**
- * Pede ao backend Go pra fechar qualquer conexão WebSocket ativa de
- * `usuario`. Falha aqui não desfaz o banimento — ele já está gravado no
- * Firestore — só significa que a sessão em aberto (se existir) vai durar
- * até expirar sozinha em vez de cair na hora. Por isso o erro é só logado,
- * nunca interrompe o fluxo de banir.
+ * Aplica o status também no Firebase Auth pelo backend (com o Admin SDK).
+ * Backend antigo, sem /admin/status: pelo menos derruba as conexões abertas.
+ * Devolve true se o servidor confirmou tudo.
  */
-async function desconectarSessaoAtiva(usuario) {
+async function aplicarStatusNoServidor(usuario, status) {
   try {
-    const token = await sessaoAtual.user.getIdToken();
-    const resposta = await fetch(`${URL_BACKEND_HTTP}/admin/kick`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ username: usuario }),
-    });
-    if (!resposta.ok) {
-      console.warn(`/admin/kick respondeu ${resposta.status} para @${usuario}`);
+    const resposta = await chamarBackend("/admin/status", { corpo: { username: usuario, status } });
+    if (resposta.ok) return true;
+    console.warn(`/admin/status respondeu ${resposta.status} para @${usuario}`);
+    if (resposta.status === 404 && status !== "ativo") {
+      await chamarBackend("/admin/kick", { corpo: { username: usuario } });
     }
   } catch (erro) {
-    console.error("Não foi possível desconectar a sessão ativa:", erro);
+    console.error("Backend indisponível ao aplicar o status:", erro);
   }
+  return false;
 }
 
 async function carregarPagina() {
@@ -280,20 +290,92 @@ function aoBuscar() {
   if (termo && !acabou) temporizadorBusca = setTimeout(() => procurarNoServidor(termo), 350);
 }
 
+/**
+ * Totais do painel. Contar conversas no navegador exigia que as regras
+ * deixassem o admin ler TODAS as conversas (com as prévias das mensagens);
+ * agora o backend conta no servidor. Sem backend, só os perfis.
+ */
 async function carregarContadores() {
   try {
-    const [usuarios, chats] = await Promise.all([
-      getCountFromServer(collection(db, "usuarios")),
-      getCountFromServer(collection(db, "chats")),
-    ]);
-    // getCountFromServer conta no servidor: não traz os documentos só para
-    // usar o .size, como era feito antes.
+    const resposta = await chamarBackend("/admin/contadores", { metodo: "GET" });
+    if (!resposta.ok) throw new Error(`contadores respondeu ${resposta.status}`);
+    const dados = await resposta.json();
+    elTotalUsuarios.textContent = Number.isFinite(dados.usuarios) ? String(dados.usuarios) : "–";
+    elTotalChats.textContent = Number.isFinite(dados.conversas) ? String(dados.conversas) : "–";
+    return;
+  } catch (erro) {
+    console.warn("Contadores do backend indisponíveis:", erro);
+  }
+  try {
+    const usuarios = await getCountFromServer(collection(db, "usuarios"));
     elTotalUsuarios.textContent = String(usuarios.data().count);
-    elTotalChats.textContent = String(chats.data().count);
   } catch (erro) {
     console.error("Erro ao contar:", erro);
     elTotalUsuarios.textContent = "–";
-    elTotalChats.textContent = "–";
+  }
+  elTotalChats.textContent = "–";
+}
+
+const NOMES_DE_EVENTOS = {
+  auth_recusada: "Login recusado no WebSocket",
+  auth_bloqueio_ip: "IP bloqueado por tentativas",
+  ws_negado: "Acesso negado a conversa",
+  ws_limite: "Limite de envio atingido",
+  ws_quadro_invalido: "Quadro inválido",
+  ws_quadro_malformado: "Quadro malformado (conexão encerrada)",
+  ws_abuso: "Conexão encerrada por abuso",
+  ws_flood: "Flood de mensagens",
+  ws_origem_recusada: "Origem desconhecida",
+  ws_limite_conexoes: "Conexões demais do mesmo IP",
+  ws_limite_handshake: "Reconexões demais",
+  http_nao_autenticado: "Token inválido na API",
+  http_proibido: "Tentativa em área de admin",
+  admin_status: "Status alterado por admin",
+  admin_kick: "Sessão derrubada por admin",
+  sessoes_revogadas: "Saiu de todos os aparelhos",
+  csp_violacao: "Bloqueio da CSP (possível XSS)",
+};
+
+/** Eventos de segurança recentes, registrados pelo backend. */
+async function carregarSeguranca() {
+  const lista = document.getElementById("listaSeguranca");
+  const resumo = document.getElementById("resumoSeguranca");
+  if (!lista) return;
+  try {
+    const resposta = await chamarBackend("/admin/seguranca", { metodo: "GET" });
+    if (!resposta.ok) throw new Error(`seguranca respondeu ${resposta.status}`);
+    const dados = await resposta.json();
+    const eventos = Array.isArray(dados?.seguranca?.recentes) ? dados.seguranca.recentes.slice(0, 20) : [];
+    if (resumo) resumo.textContent = `${Number(dados.conexoesAtivas) || 0} conexões agora`;
+    lista.replaceChildren();
+    if (!eventos.length) {
+      const li = document.createElement("li");
+      li.className = "evento-vazio";
+      li.textContent = "Nenhum evento desde o último reinício do servidor.";
+      lista.appendChild(li);
+      return;
+    }
+    eventos.forEach((e) => {
+      const li = document.createElement("li");
+      const tipo = document.createElement("span");
+      tipo.className = "evento-tipo";
+      tipo.textContent = NOMES_DE_EVENTOS[e.tipo] || String(e.tipo || "evento");
+      const hora = document.createElement("span");
+      hora.className = "evento-hora";
+      const quando = new Date(e.quando);
+      hora.textContent = Number.isNaN(quando.getTime()) ? "" : quando.toLocaleString("pt-BR");
+      const detalhe = document.createElement("span");
+      detalhe.textContent = [e.alvo ? `@${e.alvo}` : "", e.detalhe || "", e.ip || ""].filter(Boolean).join(" · ");
+      li.append(tipo, hora, detalhe);
+      lista.appendChild(li);
+    });
+  } catch (erro) {
+    console.warn("Eventos de segurança indisponíveis:", erro);
+    lista.replaceChildren();
+    const li = document.createElement("li");
+    li.className = "evento-vazio";
+    li.textContent = "Não foi possível falar com o servidor agora.";
+    lista.appendChild(li);
   }
 }
 
@@ -309,7 +391,7 @@ async function iniciar() {
   const token = await sessaoAtual.user.getIdTokenResult();
   if (token.claims.admin !== true) {
     window.location.replace(
-      "aviso.html?type=error&t=Acesso%20negado&m=Voc%C3%AA%20n%C3%A3o%20tem%20permiss%C3%A3o%20para%20esta%20p%C3%A1gina.&r=inbox.html"
+      "aviso.html?c=acesso-negado&r=inbox.html"
     );
     return;
   }
@@ -319,6 +401,7 @@ async function iniciar() {
   mostrar(elConteudo, true);
 
   carregarContadores();
+  carregarSeguranca();
   await carregarPagina();
 
   elBusca.addEventListener("input", aoBuscar);

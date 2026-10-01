@@ -2,6 +2,7 @@ import { db, storage } from "./firebase.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import Core, { sessao, definirAvatar, atualizarPerfilEmCache, mostrar, AVATAR_PADRAO } from "./core.js";
+import { idAleatorio } from "./midia-validacao.js";
 
 const TAMANHO_MAXIMO = 400; // lado maior da imagem final
 const LIMITE_ARQUIVO = 10 * 1024 * 1024;
@@ -116,9 +117,10 @@ async function salvarFoto() {
 
   try {
     // O uid está no caminho: é assim que as regras do Storage sabem que o
-    // arquivo é de quem está enviando. cacheControl agressivo porque cada
-    // envio gera um nome novo (Date.now()) — o conteúdo nunca muda depois.
-    const destino = ref(storage, `avatares/${sessaoAtual.user.uid}/${Date.now()}.jpg`);
+    // arquivo é de quem está enviando. O nome é aleatório (as regras exigem):
+    // não dá para adivinhar os avatares antigos de ninguém. cacheControl
+    // agressivo porque o conteúdo de um nome nunca muda.
+    const destino = ref(storage, `avatares/${sessaoAtual.user.uid}/${idAleatorio()}.jpg`);
     await uploadBytes(destino, blobFinal, {
       contentType: "image/jpeg",
       cacheControl: "public, max-age=31536000, immutable",

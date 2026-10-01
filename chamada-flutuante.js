@@ -99,6 +99,71 @@ export function limparEstadoDaChamada() {
 }
 
 // --------------------------------------------------------------------------
+// Intenção de chamada (uso único)
+// --------------------------------------------------------------------------
+// A tela da chamada liga câmera e microfone e conecta sozinha. Antes bastava
+// alguém mandar um link "chamada.html?u=atacante&papel=receptor" para que um
+// clique da vítima entregasse a câmera dela a quem mandou o link.
+//
+// Agora a tela só liga a mídia se ESTE navegador registrou, segundos antes,
+// que a pessoa tocou em "ligar" ou "atender" dentro do app. O registro é um
+// número aleatório de uso único, guardado no armazenamento do próprio site —
+// que um link vindo de fora não tem como escrever.
+
+const CHAVE_INTENCAO = "chamada_intencao";
+const VALIDADE_INTENCAO = 60000;
+
+function gravarIntencao(valor) {
+  try {
+    localStorage.setItem(CHAVE_INTENCAO, valor);
+    return true;
+  } catch (_) {
+    try {
+      sessionStorage.setItem(CHAVE_INTENCAO, valor);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+function lerEApagarIntencao() {
+  let bruto = null;
+  try { bruto = localStorage.getItem(CHAVE_INTENCAO); } catch (_) {}
+  if (!bruto) {
+    try { bruto = sessionStorage.getItem(CHAVE_INTENCAO); } catch (_) {}
+  }
+  try { localStorage.removeItem(CHAVE_INTENCAO); } catch (_) {}
+  try { sessionStorage.removeItem(CHAVE_INTENCAO); } catch (_) {}
+  try { return JSON.parse(bruto || "null"); } catch (_) { return null; }
+}
+
+/**
+ * Registra que a pessoa pediu esta chamada agora (clique em ligar/atender).
+ * Devolve o número de uso único que vai no endereço da tela da chamada.
+ */
+export function registrarIntencaoDeChamada({ com, papel, audio }) {
+  const nonce = typeof crypto?.randomUUID === "function"
+    ? crypto.randomUUID()
+    : Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+  gravarIntencao(JSON.stringify({ nonce, com, papel, audio: !!audio, criadaEm: Date.now() }));
+  return nonce;
+}
+
+/** Confere e consome a intenção. Qualquer divergência: false. */
+export function consumirIntencaoDeChamada({ nonce, com, papel, audio }) {
+  const dados = lerEApagarIntencao();
+  if (!dados || typeof nonce !== "string" || !nonce) return false;
+  const idade = Date.now() - Number(dados.criadaEm);
+  return dados.nonce === nonce
+    && dados.com === com
+    && dados.papel === papel
+    && dados.audio === !!audio
+    && idade >= 0
+    && idade < VALIDADE_INTENCAO;
+}
+
+// --------------------------------------------------------------------------
 // Abrir a chamada na janela dela
 // --------------------------------------------------------------------------
 
