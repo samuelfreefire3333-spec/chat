@@ -1,8 +1,7 @@
-import { db, storage } from "./firebase.js";
+import { db } from "./firebase.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import Core, { sessao, definirAvatar, atualizarPerfilEmCache, mostrar, temFotoPropria } from "./core.js";
-import { idAleatorio } from "./midia-validacao.js";
+import { enviarAvatar } from "./cloudinary.js";
 
 const TAMANHO_MAXIMO = 400; // lado maior da imagem final
 const LIMITE_ARQUIVO = 10 * 1024 * 1024;
@@ -116,16 +115,10 @@ async function salvarFoto() {
   travar(true, "Enviando...");
 
   try {
-    // O uid está no caminho: é assim que as regras do Storage sabem que o
-    // arquivo é de quem está enviando. O nome é aleatório (as regras exigem):
-    // não dá para adivinhar os avatares antigos de ninguém. cacheControl
-    // agressivo porque o conteúdo de um nome nunca muda.
-    const destino = ref(storage, `avatares/${sessaoAtual.user.uid}/${idAleatorio()}.jpg`);
-    await uploadBytes(destino, blobFinal, {
-      contentType: "image/jpeg",
-      cacheControl: "public, max-age=31536000, immutable",
-    });
-    const url = await getDownloadURL(destino);
+    // O backend assina o envio para avatares/{uid}/{uuid}: é assim que as
+    // regras do Firestore sabem que a foto é de quem está gravando, e o nome
+    // aleatório impede adivinhar os avatares antigos de alguém.
+    const url = await enviarAvatar(blobFinal);
 
     await updateDoc(doc(db, "usuarios", sessaoAtual.perfil.id), { foto: url });
 

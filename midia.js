@@ -1,27 +1,25 @@
 // ==========================================================================
 // Mídia privada das conversas (fotos e áudios)
 // ==========================================================================
-// Antes: o arquivo subia em imagens/{uid}/… e a mensagem guardava o link de
-// getDownloadURL(). Esse link tem um token que funciona SEM login e PARA
-// SEMPRE — quem pegasse o link (histórico, print, log de proxy) via a foto.
-//
-// Agora:
-//   - o arquivo vai para midia/{chatId}/{uid}/{uuid}, e as regras do Storage
-//     só deixam baixar quem participa da conversa (conferido no Firestore);
+// Os arquivos ficam no Cloudinary (cloudinary.js), porque o plano gratuito do
+// Firebase não tem Storage:
+//   - o backend confere que quem envia participa da conversa e assina o
+//     envio para midia/{chatId}/{uid}/{uuid} — o UUID é sorteado no servidor;
 //   - a mensagem guarda o CAMINHO, não um link;
-//   - quem recebe baixa com getBlob() (autenticado, passa pelas regras),
-//     confere a assinatura real do arquivo e mostra por uma URL blob: local,
-//     que só existe naquela aba;
+//   - quem recebe baixa pelo caminho, confere a assinatura real do arquivo e
+//     mostra por uma URL blob: local, que só existe naquela aba;
+//   - na conversa protegida o arquivo sobe cifrado;
+//   - limitação: fora da conversa protegida, quem souber o link (que tem o
+//     UUID aleatório) abre o arquivo sem login — ver SEGURANCA.md;
 //   - fotos são redesenhadas no navegador antes de subir: some o EXIF (GPS,
 //     modelo do celular, data) e qualquer coisa escondida no arquivo.
 //
 // Mensagens antigas continuam com o link antigo até a migração
 // (cmd/migrar-seguranca) mover os arquivos e revogar os links.
 
-import { storage } from "./firebase.js";
-import { ref, uploadBytes, getBlob } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import { reservarMidia, urlDoArquivo, ErroDeEnvio } from "./cloudinary.js";
 import {
-  detectarTipo, tipoAceito, normalizarTipoDeAudio, dimensoesReduzidas, idAleatorio,
+  detectarTipo, tipoAceito, normalizarTipoDeAudio, dimensoesReduzidas,
   caminhoDeMidiaValido, LIMITE_IMAGEM, LIMITE_AUDIO, LIMITE_CIFRADO, PIXELS_MAXIMOS,
 } from "./midia-validacao.js";
 import { cifrarArquivo, decifrarArquivo } from "./e2ee-cripto.js";
@@ -122,35 +120,50 @@ export async function prepararAudio(blob, tipoDoGravador) {
   return { blob, mime };
 }
 
-function novoCaminho(chatId, uid) {
-  return `midia/${chatId}/${uid}/${idAleatorio()}`;
+// O destino vem do servidor; confere que é desta conversa e desta conta antes
+// de gravar o caminho na mensagem.
+async function reservar(chatId, uid) {
+  let reserva;
+  try {
+    reserva = await reservarMidia(chatId);
+  } catch (err) {
+    if (err instanceof ErroDeEnvio) throw new ErroDeMidia(err.message);
+    throw err;
+  }
+  if (!caminhoDeMidiaValido(reserva.caminho, chatId) || reserva.caminho.split("/")[2] !== uid) {
+    throw new ErroDeMidia("O envio de arquivos está indisponível agora.");
+  }
+  return reserva;
+}
+
+async function subir(reserva, blob) {
+  try {
+    await reserva.enviar(blob);
+  } catch (err) {
+    if (err instanceof ErroDeEnvio) throw new ErroDeMidia(err.message);
+    throw err;
+  }
 }
 
 /** Sobe a mídia de uma conversa comum. Devolve o descritor da mensagem. */
 export async function enviarMidia({ chatId, uid, blob, mime, extras = {} }) {
-  const caminho = novoCaminho(chatId, uid);
-  await uploadBytes(ref(storage, caminho), blob, {
-    contentType: mime,
-    // private: nenhum cache compartilhado (CDN, proxy) guarda a resposta.
-    cacheControl: "private, max-age=86400",
-  });
-  return { caminho, mime, tamanho: blob.size, ...extras };
+  const reserva = await reservar(chatId, uid);
+  await subir(reserva, blob);
+  return { caminho: reserva.caminho, mime, tamanho: blob.size, ...extras };
 }
 
 /**
  * Sobe a mídia de uma conversa protegida: cifrada no aparelho, com chave
- * própria que viaja DENTRO da mensagem cifrada. O Storage só vê bytes
- * aleatórios (application/octet-stream).
+ * própria que viaja DENTRO da mensagem cifrada. O Cloudinary só vê bytes
+ * aleatórios.
  */
 export async function enviarMidiaCifrada({ chatId, uid, blob, mime, extras = {} }) {
-  const caminho = novoCaminho(chatId, uid);
+  const reserva = await reservar(chatId, uid);
+  const caminho = reserva.caminho;
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const { cifrado, chave, iv } = await cifrarArquivo(bytes, caminho);
   if (cifrado.length >= LIMITE_CIFRADO) throw new ErroDeMidia("O arquivo ficou grande demais.");
-  await uploadBytes(ref(storage, caminho), new Blob([cifrado], { type: "application/octet-stream" }), {
-    contentType: "application/octet-stream",
-    cacheControl: "private, max-age=86400",
-  });
+  await subir(reserva, new Blob([cifrado], { type: "application/octet-stream" }));
   return { caminho, mime, k: chave, iv, tamanho: blob.size, ...extras };
 }
 
@@ -192,17 +205,18 @@ export function urlDaMidia(caminho, categoria, cifra = null, chatId = null) {
   const item = { url: null, promessa: null };
   item.promessa = (async () => {
     const maximo = cifra ? LIMITE_CIFRADO : (categoria === "audio" ? LIMITE_AUDIO : LIMITE_IMAGEM);
-    let blob;
+    let resposta;
     try {
-      blob = await getBlob(ref(storage, caminho), maximo);
+      // Sem cookies nem cabeçalhos: é um GET simples ao link do arquivo.
+      resposta = await fetch(urlDoArquivo(caminho), { credentials: "omit", referrerPolicy: "no-referrer" });
     } catch (err) {
-      if (err?.code === "storage/unauthorized") throw new ErroDeMidia("Sem permissão para ver esta mídia.");
-      if (err?.code === "storage/object-not-found") throw new ErroDeMidia("Esta mídia não existe mais.");
-      // Sem a configuração de CORS do bucket o navegador bloqueia o download
-      // (ver SEGURANCA.md, "Configuração de produção").
-      console.error("Falha ao baixar mídia:", err?.code || err);
+      console.error("Falha ao baixar mídia:", err);
       throw new ErroDeMidia("Não foi possível carregar a mídia.");
     }
+    if (resposta.status === 404) throw new ErroDeMidia("Esta mídia não existe mais.");
+    if (!resposta.ok) throw new ErroDeMidia("Não foi possível carregar a mídia.");
+    const blob = await resposta.blob();
+    if (blob.size > maximo) throw new ErroDeMidia("O arquivo recebido é grande demais.");
     let bytes = new Uint8Array(await blob.arrayBuffer());
     if (cifra) bytes = await decifrarArquivo(bytes, caminho, cifra.k, cifra.iv);
 

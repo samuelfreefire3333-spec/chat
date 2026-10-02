@@ -701,3 +701,29 @@ por ele (seção 10).
   e sem App Check.
 - Revisar IAM do projeto (quem é Owner/Editor, chaves de service account
   ativas) e os logs de acesso do Google Cloud.
+
+---
+
+## Adendo (02/10/2026): mídia no Cloudinary
+
+O projeto Firebase está no plano gratuito, que não inclui Storage. Fotos de
+perfil e mídia das conversas passaram para o Cloudinary (`cloudinary.js`,
+`midia_http.go`). O que muda em relação ao que este documento descreve:
+
+- **Envio:** sempre assinado pelo backend (`POST /midia/assinar`, com ID
+  token). O servidor sorteia o nome do arquivo, só assina para a pasta da
+  própria conta (`avatares/{uid}/…`) ou de uma conversa de que a pessoa
+  participa (`midia/{chatId}/{uid}/…`), e não permite sobrescrever. O segredo
+  da conta fica só na variável `CLOUDINARY_API_SECRET` do Render.
+- **Leitura — limitação conhecida:** o Cloudinary entrega por link. A mídia
+  de conversa comum pode ser aberta, sem login, por quem tiver o link
+  (caminho com UUID aleatório, que só aparece dentro da conversa). Deixou de
+  valer a garantia de "só participante baixa" das regras do Storage.
+- **Conversa protegida (E2EE):** o arquivo continua subindo cifrado; o link
+  só entrega bytes ilegíveis.
+- **Sem efeito:** `storage.rules`, `cors.json` e a etapa de mídia da
+  migração (seção 15). A CSP ganhou `res.cloudinary.com` e
+  `api.cloudinary.com`.
+- **Limite:** 10 MB por arquivo (plano gratuito do Cloudinary).
+- **Apagar:** apagar a conversa não apaga os arquivos no Cloudinary; isso
+  exigiria uma rota de exclusão no backend, ainda não feita.

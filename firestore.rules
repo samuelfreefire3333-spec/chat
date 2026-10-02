@@ -82,14 +82,18 @@ service cloud.firestore {
     }
 
     // Foto de perfil: vazia, o avatar padrão do app ou um arquivo DA PRÓPRIA
-    // pessoa no bucket do projeto. Antes aceitava qualquer URL (rastreador,
+    // pessoa no bucket do projeto ou na conta do app no Cloudinary. Antes aceitava qualquer URL (rastreador,
     // imagem hospedada por terceiros).
     function fotoValida(foto, uid) {
       return foto is string && foto.size() <= 2048
         && (foto == ''
           || foto == '/assets/avatar-padrao.svg'
           || foto.matches('^https://firebasestorage[.]googleapis[.]com/v0/b/chat-parameuamor[.]firebasestorage[.]app/o/avatares%2F'
-              + uid + '%2F[A-Za-z0-9._-]{1,80}[?]alt=media&token=[A-Za-z0-9-]{1,64}$'));
+              + uid + '%2F[A-Za-z0-9._-]{1,80}[?]alt=media&token=[A-Za-z0-9-]{1,64}$')
+          // Cloudinary (conta do app): o backend só assina envio para a pasta
+          // do próprio uid, e a regra confere a mesma pasta.
+          || foto.matches('^https://res[.]cloudinary[.]com/ra4qbowm/image/upload/v[0-9]{1,12}/avatares/'
+              + uid + '/[A-Za-z0-9-]{1,80}[.]jpg$'));
     }
 
     // Mensagens automáticas de chamada (radar.js e chamada.js). Qualquer
@@ -377,7 +381,7 @@ service cloud.firestore {
               && (!('respostaTipo' in m) || m.respostaTipo in tiposDeMensagem()));
         }
 
-        // Foto ou áudio: o arquivo está no Storage, na pasta DESTA conversa e
+        // Foto ou áudio: o arquivo está no Cloudinary, na pasta DESTA conversa e
         // DE QUEM ENVIA, com nome aleatório. Nada de URL (link público).
         function midiaValida(md, tipo) {
           let partes = md.caminho.split('/');

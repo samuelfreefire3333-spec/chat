@@ -12,8 +12,9 @@ export const TIPOS_IMAGEM = ["image/jpeg", "image/png", "image/webp", "image/gif
 export const TIPOS_AUDIO = ["audio/webm", "audio/ogg", "audio/mp4", "audio/mpeg", "audio/aac"];
 
 export const LIMITE_IMAGEM = 10 * 1024 * 1024; // mesmo teto das regras do Storage
-export const LIMITE_AUDIO = 15 * 1024 * 1024;
-export const LIMITE_CIFRADO = 16 * 1024 * 1024;
+// O Cloudinary (plano gratuito) recusa arquivo bruto acima de 10 MB.
+export const LIMITE_AUDIO = 10 * 1024 * 1024;
+export const LIMITE_CIFRADO = 10 * 1024 * 1024;
 
 // Maior lado da foto enviada no chat. Acima disso ninguém enxerga diferença
 // no celular, e o arquivo fica pesado para quem recebe.

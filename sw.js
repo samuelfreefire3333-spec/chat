@@ -3,7 +3,7 @@
 // Suba este número a cada publicação. Sem isso — e sem o handler de activate
 // que existia antes — o cache antigo nunca era removido e quem já tinha
 // instalado o app continuava com o HTML velho até limpar os dados do site.
-const VERSAO = "v11";
+const VERSAO = "v12";
 const CACHE_ESTATICO = `sinex-estatico-${VERSAO}`;
 
 const ARQUIVOS = [
@@ -49,6 +49,7 @@ const ARQUIVOS = [
   "/mensagens.js",
   "/chamada-flutuante.js",
   "/midia.js",
+  "/cloudinary.js",
   "/midia-validacao.js",
   "/e2ee.js",
   "/e2ee-cripto.js",

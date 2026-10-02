@@ -201,6 +201,9 @@ export function escaparTexto(texto) {
 // virar uma imagem quebrada (ou um rastreador de quem abriu o perfil).
 const HOSTS_DE_MIDIA = ["firebasestorage.googleapis.com"];
 const SUFIXOS_DE_MIDIA = [".firebasestorage.app"];
+// Fotos de perfil ficam no Cloudinary, e só valem as da conta do app (o
+// mesmo nome de conta do cloudinary.js). Imagem de outra conta é recusada.
+const PREFIXO_CLOUDINARY = "/ra4qbowm/image/upload/";
 
 export function urlSegura(url, alternativa = AVATAR_PADRAO) {
   if (typeof url !== "string" || !url.trim()) return alternativa;
@@ -213,6 +216,10 @@ export function urlSegura(url, alternativa = AVATAR_PADRAO) {
     if (parsed.protocol === "blob:" && url.startsWith(`blob:${window.location.origin}/`)) return url;
     if (parsed.protocol === "https:"
       && (HOSTS_DE_MIDIA.includes(parsed.hostname) || SUFIXOS_DE_MIDIA.some((s) => parsed.hostname.endsWith(s)))) {
+      return url;
+    }
+    if (parsed.protocol === "https:" && parsed.hostname === "res.cloudinary.com"
+      && parsed.pathname.startsWith(PREFIXO_CLOUDINARY)) {
       return url;
     }
     // data: só para imagem rasterizada — nunca data:text/html nem SVG.
