@@ -86,7 +86,12 @@ export function sessao({ exigirLogin = true } = {}) {
       try {
         localStorage.setItem("usuario", perfil.usuario || perfil.id);
         if (perfil.nome) localStorage.setItem("nome", perfil.nome);
-        if (perfil.foto) localStorage.setItem("foto", perfil.foto);
+        // Sem foto também é informação: antes o cache só era gravado quando
+        // havia foto, e a foto de quem usou o aparelho antes (ou a que a
+        // pessoa já removeu em outro aparelho) continuava aparecendo.
+        const foto = fotoDoPerfil(perfil.foto);
+        if (foto) localStorage.setItem("foto", foto);
+        else localStorage.removeItem("foto");
       } catch (_) { /* modo privado do navegador */ }
 
       return { user, username: (perfil.usuario || perfil.id).toLowerCase(), perfil };
@@ -165,7 +170,11 @@ export function atualizarPerfilEmCache(campos) {
 
   try {
     if (campos.nome) localStorage.setItem("nome", campos.nome);
-    if (campos.foto) localStorage.setItem("foto", campos.foto);
+    if ("foto" in campos) {
+      const foto = fotoDoPerfil(campos.foto);
+      if (foto) localStorage.setItem("foto", foto);
+      else localStorage.removeItem("foto");
+    }
   } catch (_) {}
 }
 
@@ -469,11 +478,226 @@ export async function buscarPerfilPorUsername(username) {
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
-/** Aplica no elemento a foto do avatar já validada. */
-export function definirAvatar(elemento, url) {
+// ==========================================================================
+// AVATAR
+// ==========================================================================
+// Uma regra só para o app inteiro:
+//   - a pessoa tem foto  → mostra a foto;
+//   - não tem foto, o campo veio vazio/"undefined"/"null", o endereço é
+//     inválido ou a foto não carrega → mostra o avatar padrão do Sinex.
+// Nunca imagem quebrada, texto "undefined" ou círculo vazio.
+//
+// É sempre o MESMO <img> que troca de conteúdo, então tamanho, círculo,
+// borda e anel vermelho de cada tela valem para a foto e para o avatar
+// padrão do mesmo jeito. O style.css (img.avatar) pinta o avatar padrão no
+// fundo enquanto a foto carrega: o círculo nunca fica vazio.
+
+// Último recurso, sem rede: o desenho padrão embutido no código. Só entra se
+// até o arquivo /assets/avatar-padrao.svg falhar (offline e fora do cache).
+const AVATAR_PADRAO_EMBUTIDO = "data:image/svg+xml," + encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect width='96' height='96' fill='#1f1d22'/>"
+  + "<circle cx='48' cy='38' r='15.5' fill='#c9c9d1'/><path d='M15 100c1-20 14.5-32 33-32s32 12 33 32z' fill='#c9c9d1'/></svg>"
+);
+const AVATAR_GRUPO_EMBUTIDO = "data:image/svg+xml," + encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect width='96' height='96' fill='#e6002b'/>"
+  + "<circle cx='62' cy='37' r='12' fill='#fff' fill-opacity='.55'/><path d='M43 100c.8-21 9.2-35 21-35s20.2 14 21 35z' fill='#fff' fill-opacity='.55'/>"
+  + "<circle cx='38' cy='40' r='14' fill='#fff'/><path d='M10 100c1-23 12-37 28-37s27 14 28 37z' fill='#fff'/></svg>"
+);
+
+// Valores que já apareceram no campo "foto" e significam "sem foto".
+const FOTO_VAZIA = new Set(["", "undefined", "null", "false", "none", "nan", "[object object]"]);
+
+/** "pessoa" ou "grupo" quando a URL é um dos avatares padrão do app; senão null. */
+function avatarDoApp(url) {
+  if (typeof url !== "string" || !url) return null;
+  // O avatar padrão antigo vinha de um site de ícones de terceiros.
+  if (/cdn-icons-png\.flaticon\.com/i.test(url)) return "pessoa";
+  try {
+    const u = new URL(url, window.location.href);
+    if (u.origin !== window.location.origin) return null;
+    if (u.pathname.endsWith("/assets/avatar-padrao.svg")) return "pessoa";
+    if (u.pathname.endsWith("/assets/avatar-grupo.svg")) return "grupo";
+  } catch (_) {}
+  return null;
+}
+
+/**
+ * A foto PRÓPRIA da pessoa, já validada — ou "" quando ela não tem foto.
+ * O avatar padrão gravado no perfil (contas antigas e as criadas pelo
+ * cadastro) conta como "sem foto".
+ */
+export function fotoDoPerfil(url) {
+  if (typeof url !== "string") return "";
+  const limpa = url.trim();
+  if (FOTO_VAZIA.has(limpa.toLowerCase()) || avatarDoApp(limpa)) return "";
+
+  const segura = urlSegura(limpa, "");
+  if (!segura) return "";
+  try {
+    // Arquivo do próprio site não é foto de ninguém (as regras só aceitam
+    // foto do Storage). blob: entra: é a prévia da foto escolhida agora.
+    const u = new URL(segura, window.location.href);
+    if (u.protocol !== "blob:" && u.origin === window.location.origin) return "";
+  } catch (_) {
+    return "";
+  }
+  return segura;
+}
+
+/** true quando a pessoa tem uma foto dela (e não o avatar padrão). */
+export function temFotoPropria(url) {
+  return fotoDoPerfil(url) !== "";
+}
+
+// Fotos que já abriram ou já falharam nesta página: a lista da caixa de
+// entrada redesenha o tempo todo, e uma foto quebrada não precisa piscar de
+// novo a cada redesenho.
+const fotosQueAbriram = new Set();
+const fotosQueFalharam = new Set();
+let arquivoPadraoFalhou = false;
+const estadoDosAvatares = new WeakMap();
+
+// A rede voltou: vale tentar de novo as fotos que falharam sem conexão.
+window.addEventListener("online", () => {
+  fotosQueFalharam.clear();
+  arquivoPadraoFalhou = false;
+});
+
+function prepararAvatar(elemento) {
+  let estado = estadoDosAvatares.get(elemento);
+  if (estado) return estado;
+
+  // <img> que já veio no HTML: começa mostrando o avatar padrão.
+  const inicial = elemento.getAttribute("src") || "";
+  estado = {
+    grupo: avatarDoApp(inicial) === "grupo",
+    mostrando: avatarDoApp(inicial) ? "padrao" : (inicial ? "foto" : "nada"),
+    foto: "",
+    animar: false,
+  };
+  estadoDosAvatares.set(elemento, estado);
+
+  elemento.classList.add("avatar");
+  if (!elemento.hasAttribute("alt")) elemento.alt = "";
+  elemento.decoding = "async";
+  elemento.draggable = false;
+  elemento.addEventListener("load", () => aoCarregarAvatar(elemento));
+  elemento.addEventListener("error", () => aoFalharAvatar(elemento));
+  return estado;
+}
+
+function mostrarAvatarPadrao(elemento, estado) {
+  estado.foto = "";
+  elemento.classList.toggle("avatar-grupo", estado.grupo);
+  elemento.dataset.avatar = "padrao";
+  elemento.classList.remove("avatar-entrando");
+
+  const destino = arquivoPadraoFalhou
+    ? (estado.grupo ? AVATAR_GRUPO_EMBUTIDO : AVATAR_PADRAO_EMBUTIDO)
+    : (estado.grupo ? AVATAR_GRUPO : AVATAR_PADRAO);
+  estado.mostrando = arquivoPadraoFalhou ? "embutido" : "padrao";
+  // Já está nele: trocar o src de novo só faria o navegador recarregar.
+  if (avatarDoApp(elemento.getAttribute("src") || "") === (estado.grupo ? "grupo" : "pessoa") && !arquivoPadraoFalhou) return;
+  if (elemento.getAttribute("src") === destino) return;
+  elemento.src = destino;
+}
+
+function aoCarregarAvatar(elemento) {
+  const estado = estadoDosAvatares.get(elemento);
+  if (!estado) return;
+  if (estado.mostrando === "foto") {
+    if (estado.foto) fotosQueAbriram.add(estado.foto);
+    elemento.dataset.avatar = "foto";
+    if (estado.animar) {
+      estado.animar = false;
+      elemento.classList.remove("avatar-entrando");
+      void elemento.offsetWidth; // reinicia a animação
+      elemento.classList.add("avatar-entrando");
+    }
+  } else {
+    elemento.dataset.avatar = "padrao";
+  }
+}
+
+function aoFalharAvatar(elemento) {
+  const estado = estadoDosAvatares.get(elemento) || prepararAvatar(elemento);
+  if (estado.mostrando === "foto" || estado.mostrando === "nada") {
+    if (estado.foto) fotosQueFalharam.add(estado.foto);
+    mostrarAvatarPadrao(elemento, estado);
+    return;
+  }
+  if (estado.mostrando === "padrao") {
+    // Nem o arquivo do avatar padrão abriu (sem rede e fora do cache).
+    arquivoPadraoFalhou = true;
+    estado.mostrando = "embutido";
+    elemento.src = estado.grupo ? AVATAR_GRUPO_EMBUTIDO : AVATAR_PADRAO_EMBUTIDO;
+  }
+  // "embutido" não tem como falhar; se falhar, sobra o fundo do CSS.
+}
+
+/**
+ * Mostra no <img> a foto da pessoa ou, sem foto, o avatar padrão do Sinex.
+ *
+ * Aceita qualquer coisa que venha do perfil — URL do Storage, "", null,
+ * undefined, "undefined", o caminho do avatar padrão, o endereço antigo do
+ * site de ícones — e nunca deixa o círculo vazio nem com imagem quebrada.
+ * Para grupo, passe AVATAR_GRUPO (ou { grupo: true }).
+ */
+export function definirAvatar(elemento, url, { grupo } = {}) {
   if (!elemento) return;
-  elemento.src = urlSegura(url, AVATAR_PADRAO);
-  elemento.addEventListener("error", () => { elemento.src = AVATAR_PADRAO; }, { once: true });
+  const estado = prepararAvatar(elemento);
+  estado.grupo = typeof grupo === "boolean" ? grupo : avatarDoApp(typeof url === "string" ? url.trim() : "") === "grupo";
+
+  const foto = fotoDoPerfil(url);
+  if (!foto || fotosQueFalharam.has(foto)) {
+    mostrarAvatarPadrao(elemento, estado);
+    return;
+  }
+
+  elemento.classList.toggle("avatar-grupo", estado.grupo);
+  // A mesma foto já está na tela (ou chegando): nada a fazer.
+  if (estado.mostrando === "foto" && estado.foto === foto) return;
+
+  estado.mostrando = "foto";
+  estado.foto = foto;
+  // Foto nova entra com um esmaecer curto; a que já abriu antes entra direto.
+  estado.animar = !fotosQueAbriram.has(foto);
+  elemento.dataset.avatar = "carregando";
+  elemento.classList.remove("avatar-entrando");
+  elemento.src = foto;
+}
+
+/**
+ * Confere se a foto abre de verdade, sem colocá-la em nenhum <img>.
+ * Para usos fora de um <img> (o fundo borrado da tela de chamada).
+ */
+export function fotoAbre(url) {
+  const foto = fotoDoPerfil(url);
+  if (!foto || fotosQueFalharam.has(foto)) return Promise.resolve(false);
+  if (fotosQueAbriram.has(foto)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const teste = new Image();
+    teste.decoding = "async";
+    teste.onload = () => { fotosQueAbriram.add(foto); resolve(true); };
+    teste.onerror = () => { fotosQueFalharam.add(foto); resolve(false); };
+    teste.src = foto;
+  });
+}
+
+// Avatares que já vêm no HTML (class="avatar"): ganham a mesma proteção
+// antes mesmo de cada tela preencher a foto.
+function protegerAvataresDaPagina() {
+  document.querySelectorAll("img.avatar").forEach((img) => {
+    prepararAvatar(img);
+    // Já terminou de carregar com erro antes deste script rodar.
+    if (img.complete && img.naturalWidth === 0 && img.getAttribute("src")) aoFalharAvatar(img);
+    else if (img.complete && img.naturalWidth > 0) aoCarregarAvatar(img);
+  });
+}
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", protegerAvataresDaPagina, { once: true });
+} else {
+  protegerAvataresDaPagina();
 }
 
 /**
@@ -565,13 +789,14 @@ export async function montarAvatarNav() {
   const nav = document.getElementById("navAvatar");
   if (!nav) return;
 
-  try {
-    const cache = localStorage.getItem("foto");
-    if (cache) definirAvatar(nav, cache);
-  } catch (_) {}
+  let cache = "";
+  try { cache = localStorage.getItem("foto") || ""; } catch (_) {}
+  definirAvatar(nav, cache);
 
+  // O perfil manda: sem foto nele, volta para o avatar padrão mesmo que o
+  // cache deste aparelho ainda guarde uma foto antiga.
   const s = await sessao({ exigirLogin: false });
-  if (s?.perfil?.foto) definirAvatar(nav, s.perfil.foto);
+  if (s) definirAvatar(nav, s.perfil?.foto);
 }
 
 // ==========================================================================
@@ -635,6 +860,9 @@ const Core = {
   idDoChat,
   buscarPerfilPorUsername,
   definirAvatar,
+  fotoDoPerfil,
+  temFotoPropria,
+  fotoAbre,
   montarAvatarNav,
   atualizarPerfilEmCache,
   apagarCopiaOffline,

@@ -220,6 +220,44 @@ button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 a { color: inherit; }
 
+/* ==========================================================================
+   AVATAR — foto da pessoa ou avatar padrão do Sinex (core.js → definirAvatar)
+   Tamanho, borda e anel vermelho continuam nas regras de cada tela, no
+   mesmo <img>: foto e avatar padrão ocupam exatamente o mesmo círculo.
+   Aqui fica só o que vale para todos.
+   ========================================================================== */
+img.avatar {
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+    object-fit: cover;
+    object-position: center;
+    flex-shrink: 0;
+    /* Se uma foto falhar, o texto alternativo nunca aparece por cima. */
+    color: transparent;
+    font-size: 0;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+/* Enquanto a foto carrega (ou se ela falhar), o avatar padrão já ocupa o
+   círculo por baixo: nunca um espaço vazio. */
+img.avatar:not([data-avatar="foto"]) {
+    background-image: url("/assets/avatar-padrao.svg");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+img.avatar.avatar-grupo:not([data-avatar="foto"]) {
+    background-image: url("/assets/avatar-grupo.svg");
+}
+img.avatar.avatar-entrando { animation: avatar-entrar var(--dur-base) var(--ease-standard); }
+@keyframes avatar-entrar {
+    from { opacity: .3; }
+    to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    img.avatar.avatar-entrando { animation: none; }
+}
+
 /* Scrollbar discreta */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

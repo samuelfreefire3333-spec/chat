@@ -291,6 +291,11 @@ assets/ ............ ícones do PWA, sons e avatares padrão (pessoa e grupo)
   nunca por `innerHTML`.
 - Mídia de conversa nunca por `getDownloadURL()`: sempre `urlDaMidia()`
   (`midia.js`), que baixa com login e confere o tipo real do arquivo.
+- Avatar sempre por `Core.definirAvatar(img, perfil.foto)` — nunca `img.src =
+  foto` direto. Ele mostra a foto quando ela existe e abre; com o campo vazio,
+  `undefined`, inválido ou com a foto quebrada, mostra o avatar padrão
+  (`assets/avatar-padrao.svg`; grupo: `AVATAR_GRUPO`). Para saber se a pessoa
+  tem foto própria, `Core.temFotoPropria()`. Perfil sem foto grava `foto: ""`.
 - Nada de segredo no front-end; a configuração do Firebase é pública e quem
   protege os dados são as regras.
 - Timestamps são do servidor (`serverTimestamp()`), não do relógio do

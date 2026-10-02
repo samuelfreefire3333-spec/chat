@@ -1,4 +1,4 @@
-import Core, { sessao, definirAvatar, buscarPerfilPorUsername, AVATAR_PADRAO, urlSegura, mostrar } from "./core.js";
+import Core, { sessao, definirAvatar, buscarPerfilPorUsername, fotoDoPerfil, fotoAbre, mostrar } from "./core.js";
 import Radar from "./radar.js";
 import { registrarEventoDeChamada } from "./mensagens.js";
 import {
@@ -104,7 +104,7 @@ const emJanelaPropria = window.name === NOME_JANELA_CHAMADA || !!window.opener;
 // Dados do contato, usados na barra flutuante das outras telas e no quadro do
 // Picture-in-Picture de chamada de voz.
 let nomeDoContato = "";
-let fotoDoContato = AVATAR_PADRAO;
+let fotoDoContato = "";
 
 // Candidatos que chegam antes de a descrição remota estar aplicada precisam
 // esperar; adicioná-los cedo demais lança erro.
@@ -1107,9 +1107,11 @@ window.addEventListener("beforeunload", aoSairDaPagina);
 // Inicialização
 // --------------------------------------------------------------------------
 
-function aplicarFotoDeFundo(url) {
-  const segura = urlSegura(url, "");
-  if (!segura || !elFundo) return;
+async function aplicarFotoDeFundo(url) {
+  // Só foto de verdade e que abre: sem foto (ou com foto quebrada) fica o
+  // brilho vermelho do Sinex, e não o avatar padrão borrado.
+  const segura = fotoDoPerfil(url);
+  if (!segura || !elFundo || !(await fotoAbre(segura))) return;
   // CSSOM (e não um atributo style=""): o CSP permite.
   elFundo.style.setProperty("--foto-contato", `url(${JSON.stringify(segura)})`);
   elWrapper.dataset.fundo = "foto";
@@ -1169,11 +1171,10 @@ async function iniciar() {
       elNome.textContent = perfil.nome;
       nomeDoContato = perfil.nome;
     }
-    if (perfil?.foto) {
-      fotoDoContato = perfil.foto;
-      definirAvatar(elFoto, perfil.foto);
-      aplicarFotoDeFundo(perfil.foto);
-    }
+    // Sempre, com ou sem foto: sem foto fica o avatar padrão do Sinex.
+    fotoDoContato = fotoDoPerfil(perfil?.foto);
+    definirAvatar(elFoto, fotoDoContato);
+    aplicarFotoDeFundo(fotoDoContato);
   } catch (err) {
     console.error("Erro ao carregar o contato:", err);
   }

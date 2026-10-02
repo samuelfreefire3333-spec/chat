@@ -23,7 +23,7 @@
 //   para a janela:         { tipo: "encerrar" } · { tipo: "restaurar" }
 //                          { tipo: "atender-outra", params }
 
-import { urlSegura, AVATAR_PADRAO, aviso } from "./core.js";
+import { definirAvatar, aviso } from "./core.js";
 
 export const NOME_JANELA_CHAMADA = "sinex-chamada";
 const NOME_CANAL = "sinex-chamada";
@@ -369,7 +369,7 @@ function mostrarBarra(estado) {
   const el = montarBarra();
 
   el._nome.textContent = estado.nome || `@${estado.comQuem}`;
-  el._avatar.src = urlSegura(estado.foto, AVATAR_PADRAO);
+  definirAvatar(el._avatar, estado.foto);
   el.dataset.tipo = estado.tipo === "audio" ? "audio" : "video";
   el.classList.add("visivel");
   document.body.classList.add("com-barra-chamada");

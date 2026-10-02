@@ -1,0 +1,17 @@
+{
+  "name": "sinex-testes-de-regras",
+  "private": true,
+  "type": "module",
+  "description": "Testes das regras do Firestore e do Storage contra os emuladores oficiais do Firebase.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore,storage --project demo-sinex-regras \"node --test --test-concurrency=1 firestore.test.mjs storage.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase": "12.19.0",
+    "firebase-tools": "15.32.0"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "sinex-teste-de-fumaca",
+  "private": true,
+  "type": "module",
+  "description": "Carrega todas as páginas no Chromium com a CSP de produção e confere proteções no navegador.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node fumaca.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

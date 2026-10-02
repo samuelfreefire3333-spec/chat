@@ -1,4 +1,4 @@
-import Core, { sessao, urlSegura, AVATAR_PADRAO, buscarPerfilPorUsername } from "./core.js";
+import Core, { sessao, definirAvatar, buscarPerfilPorUsername } from "./core.js";
 import { registrarEventoDeChamada, marcarEntregueDoAviso } from "./mensagens.js";
 import {
   abrirJanelaDeChamada, ligarBarraDeChamada, lerEstadoDaChamada,
@@ -452,11 +452,11 @@ window.atualizarBadge = atualizarBadge;
 window.zerarNotificacoes = zerarNotificacoes;
 
 async function mostrarChamadaRecebida(msg) {
-  let foto = AVATAR_PADRAO;
+  let foto = "";
   let nome = "";
   try {
     const perfil = await buscarPerfilPorUsername(msg.from);
-    if (perfil?.foto) foto = perfil.foto;
+    foto = perfil?.foto || "";
     if (perfil?.nome) nome = perfil.nome;
   } catch (_) {}
 
@@ -521,8 +521,7 @@ export function renderizarBalaoChamada() {
   const avatar = document.createElement("img");
   avatar.className = "chamada-avatar";
   avatar.alt = "";
-  avatar.src = urlSegura(dados.foto, AVATAR_PADRAO);
-  avatar.addEventListener("error", () => { avatar.src = AVATAR_PADRAO; }, { once: true });
+  definirAvatar(avatar, dados.foto);
 
   const info = document.createElement("div");
   info.className = "chamada-info";

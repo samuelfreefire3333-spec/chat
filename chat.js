@@ -1,6 +1,6 @@
 import Core, {
   sessao, urlSegura, definirAvatar, horaCurta, vistoPorUltimo, paraMillis,
-  buscarPerfilPorUsername, idDoChat, AVATAR_PADRAO, AVATAR_GRUPO, montarAvatarNav, mostrar
+  buscarPerfilPorUsername, idDoChat, AVATAR_GRUPO, montarAvatarNav, mostrar, fotoDoPerfil
 } from "./core.js";
 import Radar, { zerarNotificacoes } from "./radar.js";
 import {
@@ -55,7 +55,7 @@ const ehToque = () => !MIDIA_MOUSE?.matches;
 
 let sessaoAtual = null;
 let chatId = null;
-let fotoDoContato = AVATAR_PADRAO;
+let fotoDoContato = "";
 let pararDeEscutar = null;
 let pararDeEscutarChat = null;
 let idUltimaRenderizada = null;
@@ -2554,16 +2554,15 @@ async function iniciarComoDireto() {
 
   try {
     const perfil = await buscarPerfilPorUsername(outroUsuario);
+    // Com ou sem foto: sem foto (ou perfil apagado) fica o avatar padrão.
+    fotoDoContato = fotoDoPerfil(perfil?.foto);
+    definirAvatar(elFoto, fotoDoContato);
+    definirAvatar(document.getElementById("fotoDigitando"), fotoDoContato);
     if (perfil) {
       if (perfil.nome) {
         elNome.textContent = perfil.nome;
         nomesConhecidos.set(outroUsuario, perfil.nome);
         document.title = `${perfil.nome} - Sinex Chat`;
-      }
-      if (perfil.foto) {
-        fotoDoContato = perfil.foto;
-        definirAvatar(elFoto, perfil.foto);
-        definirAvatar(document.getElementById("fotoDigitando"), perfil.foto);
       }
     } else {
       Core.aviso("Este usuário não existe mais.", "erro");

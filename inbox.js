@@ -4,7 +4,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import Core, {
   sessao, definirAvatar, horaCurta, vistoPorUltimo, paraMillis,
-  montarAvatarNav, AVATAR_PADRAO, AVATAR_GRUPO, mostrar
+  montarAvatarNav, AVATAR_GRUPO, mostrar
 } from "./core.js";
 import Radar from "./radar.js";
 import { apagarChat, estadoDoRecibo, marcarRecibos } from "./mensagens.js";
@@ -78,7 +78,7 @@ async function carregarPerfis(usernames) {
     // Quem não voltou (perfil apagado) recebe um espaço reservado.
     lote.forEach((u) => {
       if (!cachePerfis.has(u)) {
-        cachePerfis.set(u, { id: u, usuario: u, nome: u, foto: AVATAR_PADRAO, lastSeen: 0 });
+        cachePerfis.set(u, { id: u, usuario: u, nome: u, foto: "", lastSeen: 0 });
       }
     });
   }

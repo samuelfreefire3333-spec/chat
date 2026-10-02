@@ -1,7 +1,7 @@
 import { db, storage } from "./firebase.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import Core, { sessao, definirAvatar, atualizarPerfilEmCache, mostrar, AVATAR_PADRAO } from "./core.js";
+import Core, { sessao, definirAvatar, atualizarPerfilEmCache, mostrar, temFotoPropria } from "./core.js";
 import { idAleatorio } from "./midia-validacao.js";
 
 const TAMANHO_MAXIMO = 400; // lado maior da imagem final
@@ -80,7 +80,7 @@ async function prepararArquivo(arquivo) {
     if (previewObjectURL) URL.revokeObjectURL(previewObjectURL);
     previewObjectURL = URL.createObjectURL(blobFinal);
 
-    elPreview.src = previewObjectURL;
+    definirAvatar(elPreview, previewObjectURL);
     mostrar(btnSalvar, true);
     mostrar(btnRemover, false);
     if (textoEscolher) textoEscolher.textContent = "Escolher outra";
@@ -154,7 +154,7 @@ async function removerFoto() {
     await updateDoc(doc(db, "usuarios", sessaoAtual.perfil.id), { foto: "" });
     atualizarPerfilEmCache({ foto: "" });
     try { localStorage.removeItem("foto"); } catch (_) {}
-    elPreview.src = AVATAR_PADRAO;
+    definirAvatar(elPreview, "");
     mostrar(btnRemover, false);
     Core.aviso("Foto removida.", "sucesso");
   } catch (erro) {
@@ -200,8 +200,10 @@ function configurarArrastar() {
 
 async function iniciar() {
   sessaoAtual = await sessao();
-  if (sessaoAtual.perfil.foto) definirAvatar(elPreview, sessaoAtual.perfil.foto);
-  mostrar(btnRemover, !!sessaoAtual.perfil.foto && sessaoAtual.perfil.foto !== AVATAR_PADRAO);
+  definirAvatar(elPreview, sessaoAtual.perfil.foto);
+  // "Remover foto" só aparece para quem tem uma foto própria (e não o
+  // avatar padrão gravado no perfil).
+  mostrar(btnRemover, temFotoPropria(sessaoAtual.perfil.foto));
 
   elArquivo.addEventListener("change", prepararFoto);
   btnEscolher?.addEventListener("click", () => elArquivo.click());

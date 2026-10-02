@@ -5,7 +5,7 @@ import {
 import {
   doc, getDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import Core, { AVATAR_PADRAO, configurarCamposDeSenha } from "./core.js";
+import Core, { configurarCamposDeSenha } from "./core.js";
 
 const form = document.getElementById("formCadastro");
 const elNome = document.getElementById("nome");
@@ -124,7 +124,8 @@ async function fazerCadastro() {
       usuario,
       uid: credencial.user.uid,
       nome,
-      foto: AVATAR_PADRAO,
+      // Conta nova nasce sem foto: todas as telas mostram o avatar padrão.
+      foto: "",
       bio: "Olá! Estou usando o Sinex Chat.",
       dataCriacao: serverTimestamp(),
       lastSeen: Date.now(),
@@ -142,7 +143,7 @@ async function fazerCadastro() {
     try {
       localStorage.setItem("usuario", usuario);
       localStorage.setItem("nome", nome);
-      localStorage.setItem("foto", AVATAR_PADRAO);
+      localStorage.removeItem("foto");
     } catch (_) { /* modo privado do navegador */ }
 
     window.location.replace("inbox.html");

@@ -42,7 +42,8 @@ func main() {
 
 	var opts []option.ClientOption
 	if json := os.Getenv("FIREBASE_SERVICE_ACCOUNT_JSON"); strings.TrimSpace(json) != "" {
-		opts = append(opts, option.WithCredentialsJSON([]byte(json)))
+		// Só credencial do tipo service_account (ver identity.go).
+		opts = append(opts, option.WithAuthCredentialsJSON(option.ServiceAccount, []byte(json)))
 	}
 
 	app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: *projeto}, opts...)
