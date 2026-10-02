@@ -20,7 +20,7 @@
 import { reservarMidia, urlDoArquivo, ErroDeEnvio } from "./cloudinary.js";
 import {
   detectarTipo, tipoAceito, normalizarTipoDeAudio, dimensoesReduzidas,
-  caminhoDeMidiaValido, LIMITE_IMAGEM, LIMITE_AUDIO, LIMITE_CIFRADO, PIXELS_MAXIMOS,
+  caminhoDeMidiaValido, LIMITE_IMAGEM, LIMITE_AUDIO, LIMITE_CIFRADO, PIXELS_MAXIMOS, LIMITE_PNG,
 } from "./midia-validacao.js";
 import { cifrarArquivo, decifrarArquivo } from "./e2ee-cripto.js";
 
@@ -60,7 +60,7 @@ function canvasParaBlob(canvas, tipo, qualidade) {
 
 /**
  * Prepara uma foto para envio. Redesenha no canvas (o que descarta EXIF/GPS
- * e bytes extras), reduz para no máximo 2048 px no maior lado e confere o
+ * e bytes extras), reduz para no máximo 1600 px no maior lado e confere o
  * resultado. GIF passa como está, para não perder a animação — GIF não
  * carrega GPS.
  */
@@ -95,9 +95,15 @@ export async function prepararImagem(arquivo) {
   }
   ctx.drawImage(img, 0, 0, largura, altura);
 
-  let blob = await canvasParaBlob(canvas, comTransparencia ? "image/png" : "image/jpeg", 0.85);
-  if (blob.size >= LIMITE_IMAGEM && comTransparencia) {
-    blob = await canvasParaBlob(canvas, "image/jpeg", 0.85);
+  let blob = await canvasParaBlob(canvas, comTransparencia ? "image/png" : "image/jpeg", 0.8);
+  if (comTransparencia && blob.size > LIMITE_PNG) {
+    // PNG pesado (print de tela): vira JPEG, bem menor. Redesenha sobre
+    // branco, senão a transparência sairia preta.
+    ctx.globalCompositeOperation = "destination-over";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, largura, altura);
+    ctx.globalCompositeOperation = "source-over";
+    blob = await canvasParaBlob(canvas, "image/jpeg", 0.8);
   }
   const mime = detectarTipo(await cabeca(blob));
   if (!tipoAceito(mime, "imagem")) throw new ErroDeMidia("Falha ao processar a imagem.");

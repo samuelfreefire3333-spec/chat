@@ -1682,7 +1682,7 @@ function pintarEnviosEmAndamento() {
 // Fotos: câmera, galeria (várias de uma vez), colar e arrastar
 // --------------------------------------------------------------------------
 
-// A foto é reduzida (2048 px) e reprocessada antes de subir, então o arquivo
+// A foto é reduzida (1600 px) e reprocessada antes de subir, então o arquivo
 // original pode ser maior que o teto do Storage (10 MB).
 const TAMANHO_MAXIMO_IMAGEM = 30 * 1024 * 1024;
 const LIMITE_IMAGENS_POR_VEZ = 10;

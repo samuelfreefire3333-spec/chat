@@ -17,8 +17,12 @@ export const LIMITE_AUDIO = 10 * 1024 * 1024;
 export const LIMITE_CIFRADO = 10 * 1024 * 1024;
 
 // Maior lado da foto enviada no chat. Acima disso ninguém enxerga diferença
-// no celular, e o arquivo fica pesado para quem recebe.
-export const LADO_MAXIMO_IMAGEM = 2048;
+// no celular, e o arquivo fica pesado para quem envia e para quem recebe
+// (com 2048 px o envio pelo 4G demorava; 1600 px dá menos da metade dos bytes).
+export const LADO_MAXIMO_IMAGEM = 1600;
+// PNG só vale a pena para imagem pequena (figurinha, ícone). Print de tela em
+// PNG passa de vários MB; acima deste tamanho vira JPEG.
+export const LIMITE_PNG = 400 * 1024;
 // Imagens com mais pixels que isto nem são decodificadas (bomba de
 // descompressão: um PNG pequeno que ocupa gigabytes na memória).
 export const PIXELS_MAXIMOS = 40 * 1000 * 1000;
