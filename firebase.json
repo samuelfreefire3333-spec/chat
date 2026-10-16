@@ -28,7 +28,11 @@
       "logo.png",
       "**/*service-account*.json",
       "**/*adminsdk*.json",
-      "**/*-key*.json"
+      "**/*-key*.json",
+      "sinex-backend-go-main/**",
+      "**/go.mod",
+      "**/go.sum",
+      "**/.env*"
     ],
     "headers": [
       {
