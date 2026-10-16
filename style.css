@@ -155,7 +155,14 @@
     --esqueleto-brilho: rgba(255, 255, 255, 0.11);
 
     --altura-nav-celular: 64px;
-    --app-height: 100dvh;
+    /* Reserva para aparelhos que não entendem dvh. O valor de verdade vem do
+       tema.js, que mede a tela em pixels (window.innerHeight) e atualiza ao
+       girar, abrir o teclado ou voltar para o app. Assim o app instalado
+       nunca fica maior que a tela e esconde as barras. */
+    --app-height: 100vh;
+}
+@supports (height: 100dvh) {
+    :root { --app-height: 100dvh; }
 }
 
 /* 💡 MODO CLARO DINÂMICO */
@@ -210,6 +217,9 @@ html, body {
     font-size: var(--fs-md);
     line-height: var(--lh-snug);
     overflow: hidden;
+    /* O app instalado não pode "quicar" nem rolar a página inteira: isso
+       empurrava o cabeçalho (com o voltar) e a barra de baixo para fora. */
+    overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -273,7 +283,6 @@ img.avatar.avatar-entrando { animation: avatar-entrar var(--dur-base) var(--ease
     display: flex;
     width: 100vw;
     height: var(--app-height);
-    min-height: 540px;
     position: relative;
 }
 
@@ -350,7 +359,18 @@ img.avatar.avatar-entrando { animation: avatar-entrar var(--dur-base) var(--ease
    📱 RESPONSIVIDADE MOBILE
 ========================================================= */
 @media (max-width: 849px) {
-    .app-layout { flex-direction: column; min-height: 100dvh; }
+    /* Preso às bordas da área visível: o navegador (ou o app instalado)
+       decide o tamanho exato, sem depender de 100dvh/100vh nem de medida em
+       JavaScript. É o que garante a barra de baixo e o cabeçalho sempre
+       visíveis em qualquer aparelho, inclusive no Android em tela cheia. */
+    .app-layout {
+        flex-direction: column;
+        position: fixed;
+        inset: 0;
+        width: auto;
+        height: auto;
+        min-height: 0;
+    }
     .side-nav {
         order: 3;
         width: 100%;

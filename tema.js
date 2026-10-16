@@ -52,6 +52,79 @@
 
   aplicar(lerPreferencia());
 
+  // ------------------------------------------------------------------------
+  // Altura real da tela (app instalado no celular)
+  //
+  // Instalado, o app perde a barra do navegador — e com ela o botão de
+  // voltar. A navegação passa a depender só do cabeçalho e da barra de baixo
+  // do próprio app. Só que vários aparelhos calculam 100dvh/100vh errado
+  // nesse modo (maior que a tela, ou nem entendem dvh); com overflow: hidden,
+  // o excesso some e leva junto o cabeçalho e a barra de navegação.
+  //
+  // Aqui a altura é medida em pixels e vira a variável --app-height, que o
+  // layout inteiro usa. Funciona em qualquer navegador, instalado ou não.
+  // ------------------------------------------------------------------------
+  var instalado = false;
+  try {
+    instalado = (window.matchMedia && (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: fullscreen)").matches ||
+      window.matchMedia("(display-mode: minimal-ui)").matches
+    )) || window.navigator.standalone === true;
+  } catch (_) {}
+  if (instalado) raiz.classList.add("app-instalado");
+
+  function medirAltura() {
+    var altura = window.innerHeight || document.documentElement.clientHeight;
+    if (altura > 0) raiz.style.setProperty("--app-height", altura + "px");
+  }
+  medirAltura();
+
+  var agendado = false;
+  function remedir() {
+    if (agendado) return;
+    agendado = true;
+    (window.requestAnimationFrame || setTimeout)(function () {
+      agendado = false;
+      medirAltura();
+    });
+  }
+  window.addEventListener("resize", remedir);
+  window.addEventListener("orientationchange", function () {
+    // Alguns aparelhos só informam o tamanho novo depois da rotação terminar.
+    remedir();
+    setTimeout(medirAltura, 300);
+  });
+  window.addEventListener("pageshow", medirAltura);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) medirAltura();
+  });
+  document.addEventListener("DOMContentLoaded", medirAltura);
+  window.addEventListener("load", medirAltura);
+
+  // iPhone: ao fechar o teclado a página costuma ficar "empurrada" para cima,
+  // com o cabeçalho (e o voltar) escondido. Como a página nunca deveria rolar
+  // como um todo, ela volta para o topo assim que o teclado fecha.
+  function voltarAoTopo() {
+    if (window.scrollY || window.pageYOffset || document.documentElement.scrollTop) {
+      window.scrollTo(0, 0);
+    }
+  }
+  document.addEventListener("focusout", function () {
+    setTimeout(function () {
+      var ativo = document.activeElement;
+      var digitando = ativo && /^(INPUT|TEXTAREA|SELECT)$/.test(ativo.tagName);
+      if (!digitando) voltarAoTopo();
+    }, 120);
+  });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", function () {
+      var ativo = document.activeElement;
+      var digitando = ativo && /^(INPUT|TEXTAREA|SELECT)$/.test(ativo.tagName);
+      if (!digitando) voltarAoTopo();
+    });
+  }
+
   // No automático, acompanha a troca de tema do sistema com a página aberta.
   if (consultaClaro) {
     var aoMudarSistema = function () {
