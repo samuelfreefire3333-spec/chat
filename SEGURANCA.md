@@ -4,7 +4,10 @@ Este documento registra a auditoria de segurança, o que foi corrigido, como
 cada proteção funciona, o modelo de ameaça da criptografia de ponta a ponta, a
 configuração de produção e o que ainda depende de ação fora do código.
 
-Leia junto com o `README.md` (arquitetura e operação do dia a dia).
+Leia junto com o `README.md` (arquitetura e operação do dia a dia). O código do
+backend Go descrito aqui vive no repositório separado
+[`sinex-backend-go`](https://github.com/samuelfreefire3333-spec/sinex-backend-go);
+este repositório é o front-end e as regras/configuração do Firebase.
 
 ---
 

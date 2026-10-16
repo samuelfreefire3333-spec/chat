@@ -28,6 +28,11 @@ Navegador (PWA)
 O backend **não** guarda mensagens: elas vivem no Firestore. O WebSocket serve
 para o que precisa ser instantâneo e efêmero.
 
+> **O código do backend Go vive no repositório separado
+> [`sinex-backend-go`](https://github.com/samuelfreefire3333-spec/sinex-backend-go)**
+> e é publicado no Render. Este repositório (`chat`) é só o front-end (PWA) e as
+> regras/configuração do Firebase.
+
 ### Quem autoriza o quê
 
 Como o navegador fala direto com o Firestore, **as regras em
@@ -91,7 +96,9 @@ bucket (ver `SEGURANCA.md`, seção 15).
 
 ### Backend
 
-Precisa de uma service account do projeto Firebase:
+O backend fica no repositório
+[`sinex-backend-go`](https://github.com/samuelfreefire3333-spec/sinex-backend-go).
+Lá, com uma service account do projeto Firebase:
 
 ```bash
 cp .env.example .env   # preencha FIREBASE_SERVICE_ACCOUNT_JSON
@@ -104,7 +111,10 @@ como verificar tokens, e subir assim significaria aceitar qualquer conexão.
 Testes:
 
 ```bash
+# No repositório sinex-backend-go:
 go test -race ./...                         # backend e comando de migração
+
+# Neste repositório (front-end):
 node --test "testes/js/*.test.mjs"          # criptografia e validação de mídia (Node 22+)
 cd testes/regras && npm ci && npm test      # regras do Firestore/Storage (emuladores; Java 21+)
 cd testes/navegador && npm ci && npx playwright install chromium && npm test   # páginas no Chromium com a CSP de produção
@@ -204,7 +214,7 @@ inteira vai para a janelinha) e, onde ele não existe, o PiP de vídeo.
 ## Administração
 
 A permissão de admin é uma *custom claim* no token, verificada pelas regras
-do Firestore:
+do Firestore. O comando fica no repositório `sinex-backend-go`:
 
 ```bash
 go run ./cmd/setadmin -email pessoa@exemplo.com
@@ -230,7 +240,7 @@ perfil pelo e-mail do token) — ou rode a migração, que faz isso para todos.
 Enquanto uma conta não tiver `uid`, não é possível **iniciar uma conversa
 nova** com ela — as regras não teriam como autorizar o acesso.
 
-O comando `cmd/migrar-seguranca` aplica as mudanças de segurança aos dados
+O comando `cmd/migrar-seguranca` (no repositório `sinex-backend-go`) aplica as mudanças de segurança aos dados
 que já existem (uid, `contas/{uid}`, e-mail fora do perfil público, avatar de
 terceiros, mídia antiga para `midia/` sem link público, limpeza de órfãos).
 Por padrão só simula; veja `SEGURANCA.md`, seção 14.
@@ -261,22 +271,14 @@ vendor/ ............ biblioteca HPKE (RFC 9180) empacotada, com hash conferido
 chamada.js ......... a janela da chamada (WebRTC, PiP, estados)
 chamada-flutuante.js barra de chamada em andamento e conversa entre janelas
 
-main.go ............ rotas HTTP, handshake e autenticação do WebSocket
-config.go .......... configuração validada a partir do ambiente
-seguranca_http.go .. headers, CORS, IP do cliente, leitura segura de JSON
-protocolo.go ....... validação e reconstrução de cada quadro do WebSocket
-autorizacao.go ..... quem participa de qual conversa (camada única, com cache)
-limites.go ......... limitadores de taxa, falhas e conexões
-auditoria.go ....... eventos de segurança (sem dados sensíveis)
-contratos.go ....... interfaces com o Firebase (trocadas por simulações nos testes)
-hub.go ............. roteamento de mensagens e presença
-client.go .......... pumps de leitura/escrita, limites e detecção de abuso
-identity.go ........ verificação de token, contas, banimento, lastSeen
-cmd/setadmin ....... concede/revoga permissão de admin
-cmd/migrar-seguranca migração de segurança dos dados existentes
-testes/ ............ testes de JS (Node) e das regras (emuladores)
+testes/ ............ testes de JS (Node), regras (emuladores) e navegador
 assets/ ............ ícones do PWA, sons e avatares padrão (pessoa e grupo)
 ```
+
+> O **backend Go** (WebSocket, endpoints de admin, `cmd/setadmin`,
+> `cmd/migrar-seguranca`) vive no repositório separado
+> [`sinex-backend-go`](https://github.com/samuelfreefire3333-spec/sinex-backend-go),
+> publicado no Render — não neste repositório.
 
 ---
 
