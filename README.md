@@ -1,304 +1,101 @@
-# Sinex Chat
+# 🎬 Sinexflix
 
-Aplicativo de mensagens (PWA) com chat em tempo real, presença online,
-confirmações de entrega e leitura, grupos e chamadas de voz e vídeo.
-Front-end estático no Netlify (<https://sinexchat.netlify.app>), dados no
-Firestore e um backend Go no Render que cuida do WebSocket.
+[![Versão](https://img.shields.io/badge/vers%C3%A3o-3.1.0-ff4060?style=flat-square)](#)
+[![Web App PWA](https://img.shields.io/badge/PWA-samuelfreefire3333--spec.github.io-ffb030?style=flat-square)](https://samuelfreefire3333-spec.github.io/sinexflix/)
+[![Kodi](https://img.shields.io/badge/Kodi-19%2B%20(Matrix%20%7C%20Nexus%20%7C%20Omega)-17b2e7?style=flat-square)](#instalação-no-kodi)
+[![Licença](https://img.shields.io/badge/licen%C3%A7a-GPL--3.0-3ddc84?style=flat-square)](LICENSE)
 
-**Segurança:** auditoria, modelo de ameaça, criptografia de ponta a ponta e
-configuração de produção estão em [`SEGURANCA.md`](SEGURANCA.md).
+**Descubra filmes e séries, saiba onde assistir no Brasil, veja clássicos completos de domínio público e canais abertos de TV ao vivo — direto no navegador (PWA) ou no Kodi.**
 
 ---
 
-## Arquitetura
+## ✨ Recursos Principais
 
+| Recurso | Web App (PWA) | Add-on para Kodi (`v3.1.0`) |
+| :--- | :---: | :---: |
+| **Catálogo de Filmes e Séries** (Populares, Mais Bem Avaliados, Ano e Gênero via *Cinemeta*) | ✅ | ✅ |
+| **Onde Assistir no Brasil** (Disponibilidade *JustWatch / TMDB* + atalhos diretos sem chave) | ✅ | ✅ |
+| **Clássicos Completos Grátis** (Acervo público do *Internet Archive* com suporte a múltiplas partes e legendas `.srt`/`.vtt`) | ✅ | ✅ |
+| **Player Avançado Sem Anúncios** (Velocidade `0.75x–2x`, Qualidade `Auto/1080p/720p/480p`, `±10s`, `PiP`, Legendas e *Continuar de onde parou*) | ✅ | ✅ *(Player nativo do Kodi)* |
+| **TV Aberta ao Vivo** (Canais públicos do Brasil via *iptv-org*, busca instantânea, favoritos `★` e verificação automática de sinal) | ✅ | ✅ |
+| **Minha Lista & Calendário de Episódios** (Barra de progresso nos cartões, próximos episódios e sincronização `.strm`/`.nfo` com a biblioteca do Kodi) | ✅ | ✅ |
+| **Modo Infantil com Senha** (Filtro seguro para animação, família e desenhos clássicos protegido por PIN `SHA-256`) | ✅ | ✅ |
+| **Backup Portátil (`.json`) & Funcionamento Offline** (Service Worker `sinexflix-v4` + catálogo de reserva local) | ✅ | ✅ |
+
+---
+
+## 🌐 1. Como Usar o Web App (Celular, Computador ou Smart TV)
+
+Acesse diretamente pelo navegador:
+👉 **[https://samuelfreefire3333-spec.github.io/sinexflix/](https://samuelfreefire3333-spec.github.io/sinexflix/)**
+
+### Instalar como Aplicativo (PWA)
+* **Android (Chrome / Edge / Brave):** Toque no menu `⋮` (ou no botão em **Ajustes → Instalar o Sinexflix**) e selecione **Instalar aplicativo** / **Adicionar à tela inicial**.
+* **iPhone / iPad (Safari):** Toque no botão **Compartilhar** e escolha **Adicionar à Tela de Início**.
+* **Computador (Chrome / Edge):** Clique no ícone de instalação na barra de endereços para abrir o Sinexflix em janela dedicada.
+
+---
+
+## 📺 2. Instalação no Kodi (`Kodi 19, 20 e 21+`)
+
+Você pode instalar o **Repositório do Sinexflix** para receber atualizações automáticas:
+
+### Passo a passo pelo Gerenciador de Arquivos do Kodi
+1. No Kodi, abra **Configurações (⚙️) → Sistema → Add-ons** e ative **Fontes desconhecidas**.
+2. Volte para **Configurações (⚙️) → Gerenciador de arquivos → Adicionar fonte**.
+3. Digite exatamente o endereço abaixo como caminho da fonte:
+   ```text
+   https://samuelfreefire3333-spec.github.io/sinexflix/
+   ```
+4. Dê o nome **`Sinexflix`** e confirme em **OK**.
+5. Vá em **Add-ons → Instalar a partir de um arquivo ZIP**, escolha **`Sinexflix`** e instale:
+   * `repository.sinexflix-1.0.0.zip`
+6. Em seguida, clique em **Instalar do repositório → Sinexflix Repository → Add-ons de vídeo → Sinexflix → Instalar**.
+
+> **Download direto (opcional):** Você também pode baixar [`repository.sinexflix-1.0.0.zip`](repository.sinexflix-1.0.0.zip) ou [`plugin.video.sinexflix-3.1.0.zip`](plugin.video.sinexflix/plugin.video.sinexflix-3.1.0.zip) diretamente deste repositório.
+
+---
+
+## 🗂️ Estrutura do Repositório
+
+```text
+sinexflix/
+├── index.html                  # Entrada principal do Web App (PWA)
+├── app.css                     # Estilos responsivos (Mobile, Tablet, Desktop e TV Box)
+├── app.js                      # Lógica do Web App (Catálogo, Player, TV ao Vivo, Minha Lista)
+├── sw.js                       # Service Worker (cache offline da interface e capas)
+├── manifest.webmanifest        # Manifesto de instalação PWA
+├── app/                        # Espelho sincronizado do Web App para sub-rotas (/app/)
+├── addons.xml                  # Manifesto de versões do repositório Kodi
+├── addons.xml.md5              # Hash MD5 de verificação de atualização do Kodi
+├── repository.sinexflix/       # Pacote do repositório oficial para Kodi
+├── plugin.video.sinexflix/     # Pacotes distribuíveis (.zip) do add-on para Kodi
+├── patches/                    # Histórico de patches evolutivos (fase1.diff a fase4.diff)
+├── scripts/
+│   └── sync_and_verify.py      # Script de sincronização (/ -> /app/), cálculo de MD5 e validação
+└── .github/workflows/
+    └── ci-deploy.yml           # Integração contínua (validação JS/Python + sincronização automática)
 ```
-Navegador (PWA)
-  │
-  ├── Firebase Auth ........... identidade (uid). É a fonte da verdade.
-  ├── Firestore ............... perfis, conversas, mensagens, seguidores
-  ├── Firebase Storage ........ avatares (públicos para quem está logado) e
-  │                             mídia das conversas (privada, por participante)
-  │
-  └── Backend Go (WebSocket) .. presença online/offline, "digitando",
-                                notificação de mensagem, sinalização WebRTC
-                                wss://sinex-backend-go.onrender.com/ws
-```
-
-O backend **não** guarda mensagens: elas vivem no Firestore. O WebSocket serve
-para o que precisa ser instantâneo e efêmero.
-
-> **O código do backend Go vive no repositório separado
-> [`sinex-backend-go`](https://github.com/samuelfreefire3333-spec/sinex-backend-go)**
-> e é publicado no Render. Este repositório (`chat`) é só o front-end (PWA) e as
-> regras/configuração do Firebase.
-
-### Quem autoriza o quê
-
-Como o navegador fala direto com o Firestore, **as regras em
-`firestore.rules` e `storage.rules` são a única barreira real**. O JavaScript
-esconde botões por conveniência visual; ele não protege nada sozinho.
-
-- Toda autorização se apoia no `uid` do token do Firebase.
-- O documento em `usuarios/{username}` guarda o campo `uid` que liga o perfil
-  à conta de autenticação; `contas/{uid}` garante um perfil por conta.
-- O backend Go verifica o ID token com o Admin SDK, ignora qualquer
-  identidade que o cliente afirme ter e confere, para cada quadro do
-  WebSocket, se remetente e destinatário participam da conversa.
 
 ---
 
-## Modelo de dados (Firestore)
+## 🛠️ Manutenção e Desenvolvimento
 
-| Coleção | Documento | Observações |
-|---|---|---|
-| `usuarios/{username}` | perfil público (para quem está logado) | `uid` liga ao Firebase Auth; `status` (`ativo`/`suspenso`/`banido`) só admin altera; `lastSeen` (ms) é gravado pelo backend. **Sem e-mail.** |
-| `contas/{uid}` | dados privados | `usuario`, `email`, `criadoEm`. Só o dono (e o admin) lê; nasce uma vez, junto com o perfil |
-| `chats/{chatId}` | conversa | direta: `chatId` = os dois usernames em ordem alfabética unidos por `_`; grupo: ID aleatório, `criadoPorUid` (só essa pessoa apaga o grupo). `uids` é o que as regras conferem e nunca muda. Resumo: `ultimaMensagem`, `ultimoRemetente`, `ultimoTipo`, `timestamp`. Confirmações: `entregas.{uid}` e `leituras.{uid}`. Conversa protegida: `e2ee: {ativo, ativadoPor, desde}` (liga uma vez, não desliga) |
-| `chats/{chatId}/mensagens/{id}` | mensagem | `tipo`: `texto` (`texto`), `imagem`/`audio` (`midia: {caminho, mime, tamanho, …}` — caminho privado no Storage, nunca link), `sistema` (só avisos de chamada), `cifrada` (`e2ee`: envelope, só em conversa protegida). `timestamp` do servidor; `reacoes.{uid}` = emoji |
-| `seguidores/{seguidor}_{seguindo}` | aresta | criada e removida só por quem segue |
-| `chavesPublicas/{uid}/dispositivos/{id}` | aparelho | só as chaves **públicas** da criptografia de ponta a ponta; só o dono publica e apaga |
-
-Storage: `avatares/{uid}/{uuid}.jpg` (foto de perfil) e
-`midia/{chatId}/{uid}/{uuid}` (fotos e áudios das conversas, baixados com
-login e só por quem participa). `imagens/` e `audios/` são do app antigo e
-somem com a migração.
-
-A mensagem e o resumo da conversa são gravados no **mesmo lote**
-(`writeBatch`), então os dois têm exatamente o mesmo `timestamp` — é isso que
-permite comparar "até onde a pessoa leu" com cada mensagem.
-
-Estados da confirmação (conversa direta): **enviada** (✓, o servidor aceitou),
-**entregue** (✓✓, algum aparelho da pessoa recebeu) e **vista** (✓✓ colorido,
-a conversa esteve aberta e visível). No grupo, "vista" só quando todos leram;
-antes disso aparece "Vista por N".
-
-Índice composto necessário (já em `firestore.indexes.json`):
-`chats` → `uids` (array-contains) + `timestamp` (desc).
-
----
-
-## Rodando localmente
-
-### Front-end
-
-Qualquer servidor estático serve:
+Para validar o código, sincronizar a pasta `/app/` com a raiz e atualizar automaticamente o hash `addons.xml.md5`, execute na raiz do projeto:
 
 ```bash
-python -m http.server 5500
+python3 scripts/sync_and_verify.py
 ```
 
-Abra <http://localhost:5500>. Note que o CSP é entregue como **header HTTP**
-pelo Netlify (`netlify.toml`; o `firebase.json` tem o equivalente para o
-Firebase Hosting), então num servidor estático simples ele não estará ativo.
-Para a mídia privada abrir em `localhost`, a origem precisa estar no CORS do
-bucket (ver `SEGURANCA.md`, seção 15).
-
-### Backend
-
-O backend fica no repositório
-[`sinex-backend-go`](https://github.com/samuelfreefire3333-spec/sinex-backend-go).
-Lá, com uma service account do projeto Firebase:
-
-```bash
-cp .env.example .env   # preencha FIREBASE_SERVICE_ACCOUNT_JSON
-go run .
-```
-
-O servidor **se recusa a subir** sem credenciais válidas — sem elas não há
-como verificar tokens, e subir assim significaria aceitar qualquer conexão.
-
-Testes:
-
-```bash
-# No repositório sinex-backend-go:
-go test -race ./...                         # backend e comando de migração
-
-# Neste repositório (front-end):
-node --test "testes/js/*.test.mjs"          # criptografia e validação de mídia (Node 22+)
-cd testes/regras && npm ci && npm test      # regras do Firestore/Storage (emuladores; Java 21+)
-cd testes/navegador && npm ci && npx playwright install chromium && npm test   # páginas no Chromium com a CSP de produção
-```
+O workflow do GitHub Actions (`.github/workflows/ci-deploy.yml`) também executa essa verificação automaticamente a cada `push` na branch `main`.
 
 ---
 
-## Deploy
+## 📄 Licença e Fontes de Dados
 
-### Front-end
+Distribuído sob a licença **GNU General Public License v3.0 (`GPL-3.0-only`)**. Veja o arquivo [`LICENSE`](LICENSE) para mais detalhes.
 
-O Netlify publica sozinho a cada commit na branch `main` do GitHub. Só vão
-para o ar os `.html`, `.css`, `.js`, o `manifest.json` e as pastas `assets/`
-e `vendor/` (ver `[build]` no `netlify.toml`).
-
-### Regras e índices do Firestore
-
-```bash
-firebase deploy --only firestore,storage
-```
-
-Ou cole o conteúdo de `firestore.rules` em *Firebase Console → Firestore →
-Regras* e publique. Publicar as regras é obrigatório: sem elas o banco fica
-aberto. Antes de publicar, rode a suíte de `testes/regras`.
-
-O Storage precisa também do CORS do bucket (`cors.json`) e, na primeira
-publicação, da permissão para as regras lerem o Firestore — o passo a passo
-está em `SEGURANCA.md`, seção 15.
-
-### Backend (Render)
-
-Variáveis de ambiente (todas descritas em `.env.example`):
-
-| Variável | Para quê |
-|---|---|
-| `APP_ENV` | `production` (padrão) ou `development` |
-| `PORT` | definida automaticamente pelo Render |
-| `FIREBASE_PROJECT_ID` | padrão `chat-parameuamor` |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` | JSON da service account (só tipo `service_account`), em uma linha |
-| `ALLOWED_ORIGINS` | origens extras, separadas por vírgula (sem `*`) |
-| `TRUST_PROXY_HEADERS` | usar o IP real informado pelo proxy do Render (padrão `true` em produção) |
-| `REQUIRE_HTTPS` | recusar conexões sem TLS (use `true` no Render) |
-| `PRESENCE_GRACE_MS` | folga antes de anunciar "offline" (padrão 6000). Evita piscar offline/online ao trocar de tela |
-| `MAX_CONNECTIONS`, `MAX_CONNECTIONS_PER_IP`, `MAX_CONNECTIONS_PER_USER` | tetos de conexões (padrão 5000 / 30 / 10) |
-
-O servidor encerra com calma no `SIGTERM` (deploy/reinício do Render): grava o
-`lastSeen` de quem estava online e fecha as conexões; os clientes reconectam
-sozinhos.
-
-### Publicando uma versão nova do PWA
-
-Suba `VERSAO` em `sw.js`. Sem isso o Service Worker continua servindo os
-arquivos em cache e os usuários não veem a atualização. As páginas abertas
-recarregam sozinhas quando a versão nova assume — menos a janela da chamada
-(`data-sem-recarga-automatica`), que nunca recarrega no meio de uma ligação.
-
----
-
-## Protocolo do WebSocket
-
-1. O cliente abre `wss://.../ws` e manda **primeiro** (em até 10 s, até
-   8 KB) `{"type":"auth","token":"<ID token>"}`. O token nunca vai na URL.
-2. O servidor responde `auth_ok` com `payload: {"versao":3,"recursos":[...]}`.
-   Os recursos atuais: `ping`, `status-lote`, `presenca-graca`,
-   `visto-no-aviso`, `aviso-por-conversa`, `erros`. O cliente só usa o que o
-   servidor anunciou, então front e back podem ser publicados em qualquer
-   ordem.
-3. Batimento: o cliente manda `ping` a cada 25 s parado; sem `pong` em 10 s,
-   reconecta.
-4. Cada quadro é reconstruído pelo servidor a partir de uma lista de campos
-   permitidos, e só é entregue se remetente e destinatário participam da
-   conversa. Recusas voltam como `{"type":"erro","content":"<código>"}`.
-   Limites por conta e tetos de conexão: `SEGURANCA.md`, seção 5.
-
-| Tipo | Direção | Para quê |
-|---|---|---|
-| `status_check` / `status_lote` | cliente → servidor | presença de 1 pessoa / de várias num quadro só |
-| `status_update` / `status_reply` | servidor → cliente | `online` ou `offline` + `lastSeen` |
-| `digitando` / `parou_digitando` | ida e volta | com `payload.chatId`; o servidor limita a 1 aviso a cada 700 ms e descarta rajadas logo após conectar |
-| `chat` | ida e volta | aviso de mensagem nova, só com o `chatId` (a mensagem em si está no Firestore; qualquer texto é descartado pelo servidor); sem `to`, vai para todos os participantes. Serve também para marcar "entregue" |
-| `webrtc`, `chamada`, `cancelar_chamada` | ida e volta | sinalização da chamada (oferta, resposta, candidatos, `consultar_toque`/`tocando`) |
-
-"Digitando" e presença nunca entram na fila offline do cliente: reentregar
-isso depois de uma queda era o que fazia aparecer "digitando..." do nada.
-
-### Chamadas
-
-A chamada roda numa janela própria (`chamada.html`, nome `sinex-chamada`). As
-outras abas falam com ela por `BroadcastChannel("sinex-chamada")` — a barra
-verde no topo mostra o tempo e o botão "Voltar" traz a janela para a frente
-**sem navegar nela** (`window.open("", nome)`), o que antes derrubava a
-ligação. O "minimizar" usa o Picture-in-Picture de documento (a interface
-inteira vai para a janelinha) e, onde ele não existe, o PiP de vídeo.
-
----
-
-## Administração
-
-A permissão de admin é uma *custom claim* no token, verificada pelas regras
-do Firestore. O comando fica no repositório `sinex-backend-go`:
-
-```bash
-go run ./cmd/setadmin -email pessoa@exemplo.com
-go run ./cmd/setadmin -email pessoa@exemplo.com -revogar
-```
-
-A pessoa precisa sair e entrar de novo para o token novo valer.
-
-No painel (`admin.html`), suspender/banir passa pelo backend
-(`POST /admin/status`): grava o status, desativa a conta no Firebase Auth,
-revoga as sessões e derruba o WebSocket. O painel também mostra os
-contadores (`GET /admin/contadores`) e os eventos de segurança recentes
-(`GET /admin/seguranca`). O admin **não** lê conversas.
-
----
-
-## Migração de contas antigas
-
-Contas criadas antes desta versão não têm o campo `uid` no perfil. O backend
-grava esse campo sozinho na primeira vez que a pessoa conecta (localizando o
-perfil pelo e-mail do token) — ou rode a migração, que faz isso para todos.
-
-Enquanto uma conta não tiver `uid`, não é possível **iniciar uma conversa
-nova** com ela — as regras não teriam como autorizar o acesso.
-
-O comando `cmd/migrar-seguranca` (no repositório `sinex-backend-go`) aplica as mudanças de segurança aos dados
-que já existem (uid, `contas/{uid}`, e-mail fora do perfil público, avatar de
-terceiros, mídia antiga para `midia/` sem link público, limpeza de órfãos).
-Por padrão só simula; veja `SEGURANCA.md`, seção 14.
-
-As mensagens antigas ficavam num array dentro de `chats/{id}`. Este código lê
-e escreve a subcoleção `mensagens`; conversas antigas aparecem vazias até
-serem migradas. Se isso importar, escreva um script que percorra os
-documentos de `chats` e mova cada item do array para a subcoleção.
-
----
-
-## Estrutura
-
-```
-core.js ............ sessão, sanitização, avisos, formatação de tempo
-tema.js ............ aplica o tema antes da primeira pintura
-radar.js ........... WebSocket, presença, chamadas recebidas, notificações
-mensagens.js ....... leitura e escrita das conversas
-firebase.js ........ inicialização do SDK
-midia.js ........... envio e download da mídia privada (sem EXIF, tipo conferido)
-midia-validacao.js . assinatura real de arquivos e caminhos (sem DOM, testável)
-e2ee.js ............ criptografia de ponta a ponta: aparelho, chaves, conversas
-e2ee-cripto.js ..... núcleo criptográfico (HPKE + AES-GCM + ECDSA, testável)
-vendor/ ............ biblioteca HPKE (RFC 9180) empacotada, com hash conferido
-
-<página>.js ........ um módulo por tela (login, cadastro, chat, inbox, ...)
-
-chamada.js ......... a janela da chamada (WebRTC, PiP, estados)
-chamada-flutuante.js barra de chamada em andamento e conversa entre janelas
-
-testes/ ............ testes de JS (Node), regras (emuladores) e navegador
-assets/ ............ ícones do PWA, sons e avatares padrão (pessoa e grupo)
-```
-
-> O **backend Go** (WebSocket, endpoints de admin, `cmd/setadmin`,
-> `cmd/migrar-seguranca`) vive no repositório separado
-> [`sinex-backend-go`](https://github.com/samuelfreefire3333-spec/sinex-backend-go),
-> publicado no Render — não neste repositório.
-
----
-
-## Convenções
-
-- Nada de `onclick` no HTML e nada de `<script>` inline: é isso que permite ao
-  CSP recusar `'unsafe-inline'` em `script-src`.
-- Nada de `style=""` no HTML nem de `<style>` criado por script: o CSP também
-  recusa `'unsafe-inline'` em `style-src`. Para mostrar/esconder, use
-  `Core.mostrar(elemento, visivel)` (classe `.u-hidden`), não `style.display`.
-- Conteúdo vindo do banco entra no DOM por `textContent` ou `createElement`,
-  nunca por `innerHTML`.
-- Mídia de conversa nunca por `getDownloadURL()`: sempre `urlDaMidia()`
-  (`midia.js`), que baixa com login e confere o tipo real do arquivo.
-- Avatar sempre por `Core.definirAvatar(img, perfil.foto)` — nunca `img.src =
-  foto` direto. Ele mostra a foto quando ela existe e abre; com o campo vazio,
-  `undefined`, inválido ou com a foto quebrada, mostra o avatar padrão
-  (`assets/avatar-padrao.svg`; grupo: `AVATAR_GRUPO`). Para saber se a pessoa
-  tem foto própria, `Core.temFotoPropria()`. Perfil sem foto grava `foto: ""`.
-- Nada de segredo no front-end; a configuração do Firebase é pública e quem
-  protege os dados são as regras.
-- Timestamps são do servidor (`serverTimestamp()`), não do relógio do
-  aparelho.
+* **Catálogo e Metadados:** [Cinemeta](https://v3-cinemeta.strem.io) & [TMDB](https://www.themoviedb.org/)
+* **Disponibilidade em Streaming ("Onde Assistir"):** [JustWatch](https://www.justwatch.com/br) (via API do TMDB)
+* **Filmes e Desenhos Clássicos em Domínio Público:** [Internet Archive](https://archive.org/)
+* **Lista de Canais Abertos e Públicos:** [iptv-org](https://github.com/iptv-org/iptv)

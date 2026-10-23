@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addons>
+<addon id="plugin.video.sinexflix" name="Sinexflix" version="3.1.0" provider-name="Sinexflix">
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+        <import addon="plugin.video.youtube" optional="true"/>
+        <import addon="inputstream.adaptive" optional="true"/>
+    </requires>
+    <extension point="xbmc.python.pluginsource" library="default.py">
+        <provides>video</provides>
+    </extension>
+    <extension point="xbmc.service" library="service.py"/>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="pt_BR">Descubra filmes e séries, saiba onde assistir e veja clássicos e TV aberta de graça</summary>
+        <summary lang="en_GB">Discover movies and series, find where to watch them, and enjoy free classics and live TV</summary>
+        <description lang="pt_BR">Navegue por filmes e séries populares, mais bem avaliados, por ano e por gênero. Veja em quais serviços cada título está disponível no Brasil (dados da JustWatch via TMDB), assista trailers, filmes completos de domínio público do Internet Archive, canais abertos de TV ao vivo e os vídeos da sua própria pasta. Inclui Minha Lista integrada à biblioteca do Kodi, calendário e aviso de episódios novos, modo infantil com senha e versão em português e inglês.</description>
+        <description lang="en_GB">Browse popular and top-rated movies and series by year and genre. See which services carry each title in your country (JustWatch data via TMDB), watch trailers, public-domain films from the Internet Archive, free-to-air live TV and your own videos. Includes My List with Kodi library integration, new-episode alerts, a password-protected kids mode and Portuguese and English versions.</description>
+        <news>3.1.0: Episódios clicáveis com busca no acervo público, canais pré-verificados de TV aberta, filtro de canais pagos, legendas em português priorizadas e melhorias no histórico.
+3.0.0: Onde assistir (TMDB/JustWatch), modo infantil protegido por senha fora das configurações, TV ao vivo com teste de canais e troca automática de fonte, clássicos da Minha Lista na biblioteca do Kodi, atualização automática pelo repositório, versão em inglês e código reorganizado.
+2.2.0: novo nome (Sinexflix) e nova identidade visual.</news>
+        <platform>all</platform>
+        <license>GPL-3.0-only</license>
+        <assets>
+            <icon>resources/icon.png</icon>
+            <fanart>resources/fanart.jpg</fanart>
+            <clearlogo>resources/clearlogo.png</clearlogo>
+        </assets>
+    </extension>
+</addon>
+
+<addon id="repository.sinexflix" name="Sinexflix Repository" version="1.0.0" provider-name="Sinexflix">
+    <extension point="xbmc.addon.repository" name="Sinexflix Repository">
+        <dir>
+            <info compressed="false">https://samuelfreefire3333-spec.github.io/sinexflix/addons.xml</info>
+            <checksum>https://samuelfreefire3333-spec.github.io/sinexflix/addons.xml.md5</checksum>
+            <datadir zip="true">https://samuelfreefire3333-spec.github.io/sinexflix/</datadir>
+        </dir>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="pt_BR">Repositório do Sinexflix: instala e mantém o addon atualizado</summary>
+        <summary lang="en_GB">Sinexflix repository: installs the add-on and keeps it up to date</summary>
+        <platform>all</platform>
+        <assets>
+            <icon>resources/icon.png</icon>
+            <fanart>resources/fanart.jpg</fanart>
+        </assets>
+    </extension>
+</addon>
+</addons>

@@ -1,0 +1,618 @@
+diff --git a/app.css b/app.css
+index a996afc..61ea791 100644
+--- a/app.css
++++ b/app.css
+@@ -266,6 +266,12 @@ main { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) +
+ .ep p { margin: 0; font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+ .ep .when { font-size: 12px; color: var(--muted); font-weight: 600; }
+ .ep .soon { color: var(--warm); }
++.ep-go { text-align: left; color: inherit; width: 100%; border-radius: 10px; }
++.ep-go:active { background: var(--surface-2); }
++.ep .thumb { position: relative; }
++.ep-play { position: absolute; inset: 0; margin: auto; width: 36px; height: 36px; border-radius: 50%; background: rgba(14,10,20,.72); display: grid; place-items: center; }
++.ep-play svg { width: 18px; height: 18px; fill: #fff; }
++.ep-prog { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--warm); }
+ .eps { display: grid; gap: 10px; }
+ 
+ /* ---------- player ---------- */
+diff --git a/app.js b/app.js
+index cded9e4..9ceaaab 100644
+--- a/app.js
++++ b/app.js
+@@ -23,6 +23,18 @@ const TRAILER_SERVERS = {
+   timeoutMs: 2500,
+ };
+ 
++/* Fontes do "Assistir" (Fase 3), em ordem: Internet Archive -> YouTube (via Piped/Invidious acima) -> trailer. */
++const FULL_SOURCES = {
++  iaTv: ["classic_tv", "television", "classic_cartoons"],   // coleções do archive.org com episódios de séries
++  ytMinMovie: 60 * 60,        // segundos: abaixo disso não é filme completo
++  ytMinEpisode: 12 * 60,
++  // Só canais verificados (estúdios/distribuidoras que publicam filmes grátis oficialmente).
++  ytVerifiedOnly: true,
++  searchTimeoutMs: 4000,
++  iaTimeoutMs: 6000,
++  notFull: /trailer|teaser|review|rea[cç][aã]o|react|explained|explica|resumo|recap|clip|cena|scene|an[aá]lise|making of|bastidores|ending|soundtrack|trilha/i,
++};
++
+ const GENRES = [
+   ["Action", "Ação"], ["Adventure", "Aventura"], ["Animation", "Animação"], ["Comedy", "Comédia"],
+   ["Crime", "Crime"], ["Documentary", "Documentário"], ["Drama", "Drama"], ["Family", "Família"],
+@@ -54,6 +66,8 @@ const stripHtml = (s) => String(s || "").replace(/<br\s*\/?>/gi, "\n").replace(/
+ const today = () => new Date().toISOString().slice(0, 10);
+ const ddmm = (iso) => (iso ? iso.slice(8, 10) + "/" + iso.slice(5, 7) : "");
+ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
++const norm = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
++const pad2 = (n) => String(n).padStart(2, "0");
+ 
+ const store = {
+   get(key, def) { try { const v = localStorage.getItem("sx_" + key); return v == null ? def : JSON.parse(v); } catch { return def; } },
+@@ -137,12 +151,13 @@ const Cine = {
+ /* ------------------------------------------------------------------ Internet Archive */
+ const IA = {
+   img: (id) => `${API.ia}/services/img/${encodeURIComponent(id)}`,
+-  async search({ q, coll, sort = "downloads desc", rows = 30, page = 1, year } = {}) {
++  async search({ q, coll, colls, sort = "downloads desc", rows = 30, page = 1, year } = {}) {
+     if (isKids()) coll = "animationandcartoons";
+     const parts = ["mediatype:(movies)"];
+-    parts.push(`collection:(${coll || IA_COLLECTIONS.map((c) => c[0]).join(" OR ")})`);
++    parts.push(`collection:(${coll || (colls || IA_COLLECTIONS.map((c) => c[0])).join(" OR ")})`);
+     if (q) parts.push(`title:("${q.replace(/["():\[\]{}^~*?!+\-\\]/g, " ").trim()}")`);
+-    if (year) parts.push(`year:[${+year - 1} TO ${+year + 1}]`);
++    year = parseInt(year);
++    if (year) parts.push(`year:[${year - 1} TO ${year + 1}]`);
+     const p = new URLSearchParams();
+     p.set("q", parts.join(" AND "));
+     ["identifier", "title", "year", "description", "runtime"].forEach((f) => p.append("fl[]", f));
+@@ -212,13 +227,103 @@ const TMDB = {
+     return getJSON(`${API.tmdb}${path}?${p}`, { ttl: 720, headers });
+   },
+   async providers(kind, imdb) {
+-    const found = await TMDB.get(`/find/${imdb}`, { external_source: "imdb_id" });
+-    const hit = (kind === "movie" ? found.movie_results : found.tv_results) || [];
+-    if (!hit.length) return null;
+-    const data = await TMDB.get(`/${kind === "movie" ? "movie" : "tv"}/${hit[0].id}/watch/providers`);
++    let tid = imdb.startsWith("tmdb:") ? imdb.slice(5) : null;
++    if (!tid) {
++      const found = await TMDB.get(`/find/${imdb}`, { external_source: "imdb_id" });
++      const hit = (kind === "movie" ? found.movie_results : found.tv_results) || [];
++      if (!hit.length) return null;
++      tid = hit[0].id;
++    }
++    const data = await TMDB.get(`/${kind === "movie" ? "movie" : "tv"}/${tid}/watch/providers`);
+     return (data.results || {})[state.region] || {};
+   },
++  /* ---- Fase 3: busca e metadados em português ---- */
++  img: (size, p) => (p ? `https://image.tmdb.org/t/p/${size}${p}` : ""),
++  genres: (ids) => (ids || []).map((g) => TMDB_GENRES[g.id || g] || g.name).filter(Boolean),
++  toItem(r, type = r.media_type) {
++    const kind = type === "tv" ? "series" : "movie";
++    return {
++      kind, id: "tmdb:" + r.id, name: r.title || r.name || "", original: r.original_title || r.original_name || "",
++      year: (r.release_date || r.first_air_date || "").slice(0, 4), poster: TMDB.img("w342", r.poster_path),
++      background: TMDB.img("w780", r.backdrop_path || r.poster_path), logo: "", rating: r.vote_average || 0,
++      genres: TMDB.genres(r.genre_ids), plot: r.overview || "",
++    };
++  },
++  async multi(q) {
++    const d = await TMDB.get("/search/multi", { query: q, language: "pt-BR", include_adult: "false" });
++    let items = (d.results || []).filter((r) => (r.media_type === "movie" || r.media_type === "tv") && r.poster_path).map((r) => TMDB.toItem(r));
++    if (isKids()) items = items.filter((i) => i.genres.some((g) => KIDS_GENRES.includes(g)));
++    return items;
++  },
++  /* id = "tt..." (IMDb) ou "tmdb:123". Resultado guardado no aparelho por 3 dias. */
++  async details(kind, id) {
++    const type = kind === "movie" ? "movie" : "tv";
++    let tid = id.startsWith("tmdb:") ? id.slice(5) : null;
++    if (!tid) {
++      const ck = `tmid_${type}_${id}`; tid = store.get(ck, null);
++      if (!tid) {
++        const f = await TMDB.get(`/find/${id}`, { external_source: "imdb_id" });
++        const h = (type === "movie" ? f.movie_results : f.tv_results) || [];
++        if (!h.length) return null;
++        tid = String(h[0].id); store.set(ck, tid);
++      }
++    }
++    const cache = store.get("tmCache", {}), key = `${type}_${tid}`;
++    if (cache[key] && Date.now() - cache[key].t < 3 * 864e5) return cache[key].v;
++    const d = await TMDB.get(`/${type}/${tid}`, { language: "pt-BR", append_to_response: "videos,external_ids", include_video_language: "pt,en,null" });
++    const vids = (d.videos && d.videos.results || []).filter((v) => v.site === "YouTube" && /Trailer|Teaser/.test(v.type))
++      .sort((a, b) => ((b.iso_639_1 === "pt") - (a.iso_639_1 === "pt")) || ((b.type === "Trailer") - (a.type === "Trailer")));
++    const v = {
++      tid, type, imdb: (d.external_ids && d.external_ids.imdb_id) || d.imdb_id || "",
++      name: d.title || d.name || "", original: d.original_title || d.original_name || "", overview: d.overview || "",
++      poster: TMDB.img("w342", d.poster_path), background: TMDB.img("w1280", d.backdrop_path),
++      year: (d.release_date || d.first_air_date || "").slice(0, 4), genres: TMDB.genres(d.genres),
++      rating: d.vote_average || 0, runtime: d.runtime || (d.episode_run_time || [])[0] || 0,
++      trailers: vids.map((x) => x.key), seasons: (d.seasons || []).map((s) => s.season_number).filter((n) => n > 0),
++    };
++    cache[key] = { t: Date.now(), v };
++    const keep = Object.keys(cache).sort((a, b) => cache[b].t - cache[a].t).slice(0, 40);
++    store.set("tmCache", Object.fromEntries(keep.map((k) => [k, cache[k]])));
++    return v;
++  },
++  /* Episódios em português (até 20 temporadas numa só chamada). Formato igual ao "videos" do Cinemeta. */
++  async episodes(tid, seasons) {
++    const nums = seasons.slice(0, 20); if (!nums.length) return [];
++    const d = await TMDB.get(`/tv/${tid}`, { language: "pt-BR", append_to_response: nums.map((n) => "season/" + n).join(",") });
++    return nums.flatMap((n) => ((d["season/" + n] || {}).episodes || []).map((e) => ({
++      season: n, episode: e.episode_number, name: e.name, overview: e.overview, released: e.air_date || "", thumbnail: TMDB.img("w300", e.still_path),
++    })));
++  },
+ };
++const TMDB_GENRES = { 28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy", 80: "Crime", 99: "Documentary", 18: "Drama",
++  10751: "Family", 14: "Fantasy", 36: "History", 27: "Horror", 9648: "Mystery", 10749: "Romance", 878: "Sci-Fi", 53: "Thriller",
++  10752: "War", 37: "Western", 10759: "Action", 10765: "Sci-Fi", 10768: "War", 10762: "Family" };
++
++/* Metadados unificados: Cinemeta (IMDb) + TMDB em pt-BR quando há chave. Devolve um "meta" no formato do Cinemeta. */
++async function getMeta(kind, id) {
++  const tm = TMDB.enabled() ? TMDB.details(kind, id).catch(() => null) : Promise.resolve(null);
++  let cine = /^tt\d+$/.test(id) ? await Cine.meta(kind, id).catch(() => null) : null;
++  const t = await tm;
++  if (!cine && t && t.imdb) cine = await Cine.meta(kind, t.imdb).catch(() => null);
++  if (!cine && !t) return null;
++  const m = cine ? { ...cine } : {
++    imdb_id: t.imdb || "", id: t.imdb || "tmdb:" + t.tid, name: t.name, poster: t.poster, background: t.background,
++    releaseInfo: t.year, imdbRating: t.rating ? t.rating.toFixed(1) : "", genres: t.genres,
++    runtime: t.runtime ? t.runtime + " min" : "", videos: [],
++  };
++  m.names = [...new Set([t && t.name, cine && cine.name, t && t.original].filter(Boolean))];
++  if (t) {
++    m.name = t.name || m.name;
++    if (t.overview) m.description = t.overview;
++    if (!m.poster) m.poster = t.poster;
++    if (!m.background) m.background = t.background;
++    m.trailerStreams = [...t.trailers.map((k) => ({ ytId: k })), ...(m.trailerStreams || [])];
++    m.runtimeMin = t.runtime;
++    if (kind === "series" && !(m.videos || []).some((v) => v.season)) m.videos = await TMDB.episodes(t.tid, t.seasons).catch(() => []);
++  }
++  m.canonical = m.imdb_id || (cine && cine.id) || id;
++  return m;
++}
+ 
+ /* ------------------------------------------------------------------ TV ao vivo */
+ // Canais pagos não entram (só TV aberta e pública).
+@@ -384,10 +489,10 @@ function remember(items) { items.forEach((i) => seen.set(i.kind + ":" + i.id, i)
+ 
+ /* ------------------------------------------------------------------ navegação e camadas */
+ const layers = [];
+-function pushLayer(el, onClose) {
++function pushLayer(el, onClose, hash) {
+   $("#overlays").appendChild(el);
+   layers.push({ el, onClose });
+-  history.pushState({ layer: layers.length }, "");
++  if (hash) history.pushState({ layer: layers.length }, "", hash); else history.pushState({ layer: layers.length }, "");
+   document.body.style.overflow = "hidden";
+ }
+ function popLayer() {
+@@ -411,12 +516,12 @@ window.addEventListener("popstate", () => {
+   else if (location.hash.slice(1) !== state.tab) showTab(location.hash.slice(1) || "inicio", false);
+ });
+ 
+-function sheet(html, { back = false } = {}) {
++function sheet(html, { back = false, hash } = {}) {
+   const el = document.createElement("div");
+   el.className = "sheet";
+   el.innerHTML = `<button class="sheet-close${back ? " sheet-back" : ""}" aria-label="${back ? "Voltar" : "Fechar"}">${back ? ICON.back : ICON.close}</button>${html}`;
+   el.querySelector(".sheet-close").onclick = () => closeTop();
+-  pushLayer(el);
++  pushLayer(el, null, hash);
+   el.addEventListener("click", delegate);
+   return el;
+ }
+@@ -462,7 +567,7 @@ RENDER.inicio = async (view) => {
+ 
+   const genre = kids ? "Animation" : undefined;
+   Cine.catalog("movie", "top", { genre }).then((items) => { remember(items); renderHero(items.filter((i) => i.background).slice(0, 7)); }).catch(() => $("#hero").remove());
+-  fillRow("r-cont", async () => Lib.watched().filter((w) => w.kind === "ia").slice(0, 12));
++  fillRow("r-cont", async () => Lib.watched().filter((w) => w.kind !== "live").slice(0, 12));
+   fillRow("r-ia", async () => (await IA.search({ coll: kids ? "animationandcartoons" : "feature_films", rows: 24 })).items);
+   fillRow("r-mov", () => Cine.catalog("movie", "top", { genre }));
+   fillRow("r-ser", () => Cine.catalog("series", "top", { genre }));
+@@ -549,7 +654,7 @@ async function openCollection(coll, title) {
+ async function openDetail(kind, id) {
+   const base = seen.get(kind + ":" + id) || { kind, id, name: "", poster: "", background: "" };
+   const el = sheet(`<div class="backdrop">${base.background ? `<img src="${esc(base.background)}" alt="">` : ""}</div>
+-    <div class="detail pad" id="detailBody"><div class="spinner"></div></div>`);
++    <div class="detail pad" id="detailBody"><div class="spinner"></div></div>`, { hash: `#titulo/${kind}/${encodeURIComponent(id)}` });
+   const body = $("#detailBody", el);
+   try {
+     if (kind === "ia") await renderIADetail(el, body, base);
+@@ -570,20 +675,32 @@ function wireListBtn(root, item) {
+ function wireShare(root, title) {
+   const b = $("[data-share]", root); if (!b) return;
+   if (!navigator.share) { const l = $("[data-list]", root); if (l) l.style.gridColumn = "1 / -1"; b.remove(); return; }
+-  b.onclick = () => navigator.share({ title, text: `${title} no Sinexflix`, url: location.href.split("#")[0] }).catch(() => {});
++  b.onclick = () => navigator.share({ title, text: `${title} no Sinexflix`, url: location.href }).catch(() => {});   // o link abre direto na ficha
+ }
+ 
+ async function renderCineDetail(el, body, kind, id, base) {
+-  const meta = await Cine.meta(kind, id);
++  const meta = await getMeta(kind, id);
+   if (!meta) throw new Error("sem meta");
+   const it = Cine.toItem(meta, kind);
+   if (isKids() && !it.genres.some((g) => KIDS_GENRES.includes(g))) {
+     body.innerHTML = '<div class="empty"><strong>Indisponível no modo infantil.</strong></div>'; return;
+   }
++  // Busca do TMDB abre com id "tmdb:..."; quando há IMDb, a rota passa a usar ele (lista e "continuar" ficam iguais).
++  if (meta.canonical !== id) {
++    id = meta.canonical; it.id = id;
++    history.replaceState(history.state, "", `#titulo/${kind}/${encodeURIComponent(id)}`);
++  }
++  remember([it]);
+   if (!base.background && it.background) $(".backdrop", el).innerHTML = `<img src="${esc(it.background)}" alt="">`;
+   const trailers = Cine.trailers(meta);
+   const runtime = (String(meta.runtime || "").match(/\d+/) || [])[0];
+   const oldMovie = kind === "movie" && parseInt(it.year) && parseInt(it.year) <= 1980;
++  const ctx = { kind, id, name: it.name, names: meta.names || [it.name], year: it.year, poster: it.poster, background: it.background,
++    runtime: (meta.runtimeMin || +runtime || 0) * 60, trailer: trailers[0] || "", genres: it.genres,
++    eps: (meta.videos || []).filter((v) => v.season && (v.released || v.firstAired || "").slice(0, 10) <= today() && (v.released || v.firstAired))
++      .sort((a, b) => a.season - b.season || (a.episode || a.number) - (b.episode || b.number)) };
++  const last = kind === "series" ? store.get("lastEp", {})[id] : null;
++  const watchLabel = kind === "movie" ? "Assistir" : last ? `Continuar T${last[0]}E${last[1]}` : ctx.eps.length ? "Assistir T" + ctx.eps[0].season + "E" + (ctx.eps[0].episode || ctx.eps[0].number) : "";
+   body.innerHTML = `
+     <div class="detail-head">
+       <div class="poster">${it.poster ? `<img src="${esc(it.poster)}" alt="">` : ""}</div>
+@@ -592,7 +709,8 @@ async function renderCineDetail(el, body, kind, id, base) {
+       </div>
+     </div>
+     <div class="actions">
+-      ${trailers.length ? `<button class="btn primary" data-yt="${esc(trailers[0])}">${ICON.play} Assistir trailer</button>` : `<button class="btn primary" disabled>Sem trailer disponível</button>`}
++      ${watchLabel ? `<button class="btn primary hot" data-watch>${ICON.play} ${esc(watchLabel)}</button>` : ""}
++      ${trailers.length ? `<button class="btn${watchLabel ? "" : " primary"}" data-yt="${esc(trailers[0])}">${ICON.play} Trailer</button>` : watchLabel ? "" : `<button class="btn primary" disabled>Sem trailer disponível</button>`}
+       ${listBtnHTML(kind, id)}
+       <button class="btn" data-share>${ICON.share} Compartilhar</button>
+     </div>
+@@ -607,11 +725,18 @@ async function renderCineDetail(el, body, kind, id, base) {
+     ${kind === "series" ? `<section class="panel" id="seasons"></section>` : ""}
+   `;
+   const yt = $("[data-yt]", body); if (yt) yt.onclick = () => openTrailer(yt.dataset.yt, it.name, it.background || it.poster);
++  const wb = $("[data-watch]", body);
++  if (wb) {
++    const cfg = () => (kind === "movie" ? movieCfg(ctx) : episodeCfg(ctx, ...(last || [ctx.eps[0].season, ctx.eps[0].episode || ctx.eps[0].number])) || episodeCfg(ctx, ctx.eps[0].season, ctx.eps[0].episode || ctx.eps[0].number));
++    const warm = () => { if (!wb.dataset.warmed) { wb.dataset.warmed = "1"; cfg(); } };   // começa a procurar antes do clique terminar
++    wb.addEventListener("pointerdown", warm, { passive: true }); wb.addEventListener("mouseenter", warm);
++    wb.onclick = () => openWatch(cfg());
++  }
+   if (trailers.length) prewarmTrailer(trailers[0]);   // quem abriu a ficha provavelmente vai ver o trailer
+   wireListBtn(body, it); wireShare(body, it.name);
+   renderProviders($("#whereToWatch", body), kind, id, it.name);
+   if (oldMovie) findFreeCopy($("#freeCopy", body), it);
+-  if (kind === "series") renderSeasons($("#seasons", body), meta);
++  if (kind === "series") renderSeasons($("#seasons", body), meta, ctx);
+ }
+ 
+ async function renderProviders(box, kind, id, name) {
+@@ -648,25 +773,36 @@ async function findFreeCopy(box, it) {
+   } catch { box.remove(); }
+ }
+ 
+-function renderSeasons(box, meta) {
++function renderSeasons(box, meta, ctx) {
+   const videos = (meta.videos || []).filter((v) => v.season);
+   const seasons = [...new Set(videos.map((v) => v.season))].sort((a, b) => a - b);
+   if (!seasons.length) { box.remove(); return; }
+   const t = today();
++  const last = store.get("lastEp", {})[ctx.id];
++  const pos = store.get("positions", {});
+   const draw = (s) => {
+     const eps = videos.filter((v) => v.season === s).sort((a, b) => (a.episode || a.number) - (b.episode || b.number));
+     $(".eps", box).innerHTML = eps.map((v) => {
++      const n = v.episode || v.number;
+       const rel = (v.released || v.firstAired || "").slice(0, 10);
+-      const soon = rel && rel > t;
+-      return `<div class="ep"><div class="thumb">${v.thumbnail ? `<img src="${esc(v.thumbnail)}" alt="" loading="lazy" onerror="this.remove()">` : ""}</div>
+-        <div><h4>${v.episode || v.number}. ${esc(v.name || v.title || "Episódio")}</h4>
+-        <div class="when${soon ? " soon" : ""}">${soon ? "Estreia " + ddmm(rel) : rel ? ddmm(rel) + "/" + rel.slice(0, 4) : ""}</div>
+-        ${v.overview || v.description ? `<p>${esc(v.overview || v.description)}</p>` : ""}</div></div>`;
++      const soon = !rel || rel > t;
++      const p = pos[`ep:${ctx.id}:${s}:${n}`];
++      return `<${soon ? "div" : "button"} class="ep${soon ? "" : " ep-go"}"${soon ? "" : ` data-ep="${s}:${n}" aria-label="Assistir episódio ${n}"`}>
++        <div class="thumb">${v.thumbnail ? `<img src="${esc(v.thumbnail)}" alt="" loading="lazy" onerror="this.remove()">` : ""}${soon ? "" : `<i class="ep-play">${ICON.play}</i>`}${p ? `<i class="ep-prog" style="width:${Math.round((p[0] / p[1]) * 100)}%"></i>` : ""}</div>
++        <div><h4>${n}. ${esc(v.name || v.title || "Episódio")}</h4>
++        <div class="when${soon ? " soon" : ""}">${soon ? (rel ? "Estreia " + ddmm(rel) : "Em breve") : ddmm(rel) + "/" + rel.slice(0, 4)}</div>
++        ${v.overview || v.description ? `<p>${esc(v.overview || v.description)}</p>` : ""}</div></${soon ? "div" : "button"}>`;
+     }).join("");
++    $$("[data-ep]", box).forEach((b) => {
++      const [se, ep] = b.dataset.ep.split(":").map(Number);
++      b.addEventListener("pointerdown", () => episodeCfg(ctx, se, ep), { passive: true, once: true });   // pré-aquece
++      b.onclick = () => { const c = episodeCfg(ctx, se, ep); if (c) openWatch(c); };
++    });
+   };
+-  box.innerHTML = `<h3>Episódios</h3><div class="seasons">${seasons.map((s, n) => `<button class="chip${n === seasons.length - 1 ? " on" : ""}" data-s="${s}">Temporada ${s}</button>`).join("")}</div><div class="eps"></div>`;
++  const start = last && seasons.includes(last[0]) ? last[0] : seasons[seasons.length - 1];
++  box.innerHTML = `<h3>Episódios</h3><div class="seasons">${seasons.map((s) => `<button class="chip${s === start ? " on" : ""}" data-s="${s}">Temporada ${s}</button>`).join("")}</div><div class="eps"></div>`;
+   $$(".chip", box).forEach((c) => (c.onclick = () => { $$(".chip", box).forEach((x) => x.classList.toggle("on", x === c)); draw(+c.dataset.s); }));
+-  draw(seasons[seasons.length - 1]);
++  draw(start);
+ }
+ 
+ async function renderIADetail(el, body, base) {
+@@ -869,6 +1005,216 @@ function openTrailer(ytIdIn, title, poster = "") {
+   choose("auto");
+ }
+ 
++/* ===== Assistir: filme completo ou episódio (Fase 3) =====
++   Cadeia: Internet Archive (domínio público) -> YouTube de canal verificado (via Piped/Invidious) -> trailer.
++   A camada abre na hora com a capa; as fontes chegam depois e aparecem como botões para trocar. */
++const watchMem = new Map();                    // chave -> Promise<fontes[]>
++
++async function ytSearch(q) {
++  const ck = "sx_ys_" + q;
++  try { const v = JSON.parse(sessionStorage.getItem(ck)); if (v && Date.now() - v.t < TRAILER_TTL) return v.r; } catch { /* sem cache */ }
++  const getJ = (u, sig) => fetch(u, { signal: sig }).then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
++  const runs = [
++    ...TRAILER_SERVERS.piped.map((u) => (sig) => getJ(`${u}/search?q=${encodeURIComponent(q)}&filter=videos`, sig)
++      .then((j) => (j.items || []).map((i) => ({ id: ((i.url || "").match(/v=([\w-]{11})/) || [])[1], title: i.title || "", dur: i.duration || 0, verified: !!i.uploaderVerified, by: i.uploaderName || "" })))),
++    ...TRAILER_SERVERS.invidious.map((u) => (sig) => getJ(`${u}/api/v1/search?q=${encodeURIComponent(q)}&type=video`, sig)
++      .then((j) => (Array.isArray(j) ? j : []).map((i) => ({ id: i.videoId, title: i.title || "", dur: i.lengthSeconds || 0, verified: !!i.authorVerified, by: i.author || "" })))),
++  ];
++  const r = (await Promise.any(runs.map((run) => withTimeout(run, FULL_SOURCES.searchTimeoutMs))).catch(() => [])).filter((v) => v.id);
++  if (r.length) try { sessionStorage.setItem(ck, JSON.stringify({ t: Date.now(), r })); } catch { /* sem cache */ }
++  return r;
++}
++
++async function findOnYouTube({ names, queries, minDur, runtime = 0, must = [] }) {
++  const keys = names.map(norm).filter((k) => k.length >= 2);
++  const req = must.map(norm).filter(Boolean);
++  const lists = await Promise.all(queries.map(ytSearch));
++  const ids = new Set();
++  return lists.flat().filter((v) => {
++    if (ids.has(v.id)) return false; ids.add(v.id);
++    if (v.dur < minDur || FULL_SOURCES.notFull.test(v.title)) return false;
++    if (FULL_SOURCES.ytVerifiedOnly && !v.verified) return false;
++    const t = norm(v.title);
++    return keys.some((k) => t.includes(k)) && (!req.length || req.some((m) => t.includes(m)));
++  }).sort((a, b) => (runtime ? Math.abs(a.dur - runtime) - Math.abs(b.dur - runtime) : b.dur - a.dur)).slice(0, 3);
++}
++
++/* t = { key, names, year, runtime, ep?: {s, e, name}, trailer } */
++function findFull(t) {
++  if (watchMem.has(t.key)) return watchMem.get(t.key);
++  const keys = t.names.map(norm).filter(Boolean);
++  const ia = (async () => {
++    if (t.ep) {
++      const en = norm(t.ep.name);
++      if (en.length < 4) return [];
++      const { items } = await IA.search({ q: t.names[t.names.length - 1], colls: FULL_SOURCES.iaTv, rows: 80 });
++      return items.filter((i) => norm(i.name).includes(en)).slice(0, 2);
++    }
++    let { items } = await IA.search({ q: t.names[t.names.length - 1], year: t.year, rows: 8 });   // nome original costuma ser o do acervo
++    if (!items.length && t.names.length > 1) ({ items } = await IA.search({ q: t.names[0], year: t.year, rows: 8 }));
++    // Título do acervo tem que começar com o nome (evita "Felix Minds the Kid" para "The Kid"); nomes longos podem estar no meio.
++    const hit = (n) => keys.some((k) => n.startsWith(k) || (k.split(" ").length >= 3 && n.includes(k)));
++    return items.filter((i) => hit(norm(i.name))).slice(0, 2);
++  })();
++  const iaTimed = Promise.race([ia, sleep(FULL_SOURCES.iaTimeoutMs).then(() => [])]).catch(() => []);
++  const [n0, nL] = [t.names[0], t.names[t.names.length - 1]];
++  const yt = findOnYouTube(t.ep
++    ? { names: t.names, minDur: FULL_SOURCES.ytMinEpisode, runtime: t.runtime,
++        must: norm(t.ep.name).length >= 4 ? [t.ep.name] : [`s${pad2(t.ep.s)}e${pad2(t.ep.e)}`, `${t.ep.s}x${pad2(t.ep.e)}`, `episodio ${t.ep.e}`, `episode ${t.ep.e}`],
++        queries: [`${nL} S${pad2(t.ep.s)}E${pad2(t.ep.e)} ${t.ep.name || ""}`.trim(), `${n0} temporada ${t.ep.s} episódio ${t.ep.e}`] }
++    : { names: t.names, minDur: FULL_SOURCES.ytMinMovie, runtime: t.runtime,
++        queries: [...new Set([`${n0} ${t.year} filme completo`, `${nL} ${t.year} full movie`])] }).catch(() => []);
++  const p = Promise.all([iaTimed, yt]).then(([a, y]) => {
++    const out = [];
++    a.forEach((i, n) => out.push({ type: "ia", id: i.id, label: a.length > 1 ? `Internet Archive ${n + 1}` : "Internet Archive" }));
++    y.forEach((v) => out.push({ type: "yt", id: v.id, label: `YouTube · ${v.by}`.slice(0, 40) }));
++    if (t.trailer) out.push({ type: "yt", id: t.trailer, label: "Trailer", trailer: true });
++    const firstYt = out.find((c) => c.type === "yt"); if (firstYt) prewarmTrailer(firstYt.id);   // já resolve o stream
++    return out;
++  });
++  watchMem.set(t.key, p);
++  p.then((l) => { if (!l.length) watchMem.delete(t.key); });
++  return p;
++}
++
++function movieCfg(ctx) {
++  return {
++    title: ctx.name, poster: ctx.background || ctx.poster, resumeKey: `mv:${ctx.id}`,
++    item: { kind: "movie", id: ctx.id, name: ctx.name, year: ctx.year, poster: ctx.poster, genres: ctx.genres },
++    candidates: findFull({ key: "mv:" + ctx.id, names: ctx.names, year: ctx.year, runtime: ctx.runtime, trailer: ctx.trailer }),
++  };
++}
++function episodeCfg(ctx, s, e) {
++  const i = ctx.eps.findIndex((v) => v.season === s && (v.episode || v.number) === e);
++  const v = ctx.eps[i]; if (!v) return null;
++  const name = v.name || v.title || "";
++  return {
++    title: `${ctx.name} · T${s}E${e}${name ? " · " + name : ""}`, poster: v.thumbnail || ctx.background || ctx.poster,
++    resumeKey: `ep:${ctx.id}:${s}:${e}`,
++    item: { kind: "series", id: ctx.id, name: ctx.name, year: ctx.year, poster: ctx.poster, genres: ctx.genres },
++    onStart: () => { const all = store.get("lastEp", {}); all[ctx.id] = [s, e]; store.set("lastEp", all); },
++    candidates: findFull({ key: `ep:${ctx.id}:${s}:${e}`, names: ctx.names, year: ctx.year, runtime: ctx.runtime, ep: { s, e, name }, trailer: "" }),
++    next: () => { const n = ctx.eps[i + 1]; return n ? episodeCfg(ctx, n.season, n.episode || n.number) : null; },
++  };
++}
++
++function openWatch(cfg) {
++  const el = document.createElement("div");
++  el.className = "player";
++  el.innerHTML = `<div class="player-bar"><button class="icon-btn" data-x aria-label="Fechar">${ICON.close}</button><div class="t"></div></div>
++    <div class="tp-holder"></div>
++    <div class="player-foot tp-foot"><div class="tp-servers" role="group" aria-label="Fonte"></div></div>`;
++  $("[data-x]", el).onclick = () => closeTop();
++  const holder = $(".tp-holder", el), box = $(".tp-servers", el);
++  let cur = cfg, list = [], idx = -1, token = 0, hls = null, controls = null, nextTimer = 0;
++  const stop = () => {
++    clearTimeout(nextTimer);
++    if (controls) { controls.destroy(); controls = null; }
++    if (hls) { hls.destroy(); hls = null; }
++    const v = $("video", holder); if (v) { v.removeAttribute("src"); v.load(); }
++  };
++  pushLayer(el, stop);
++  const posterHTML = () => (cur.poster ? `<img class="tp-poster" src="${esc(cur.poster)}" alt="">` : "");
++  const loading = (t) => { stop(); holder.innerHTML = `${posterHTML()}<div class="tp-load"><div class="spinner"></div><span>${esc(t)}</span></div>`; };
++  const error = (t, sub = "") => { stop(); holder.innerHTML = `${posterHTML()}<div class="tp-load"><strong>${esc(t)}</strong>${sub ? `<span>${esc(sub)}</span>` : ""}</div>`; };
++  const chips = () => {
++    box.innerHTML = list.map((c, i) => `<button class="chip${i === idx ? " on" : ""}" data-i="${i}">${esc(c.label)}</button>`).join("");
++    $$("[data-i]", box).forEach((b) => (b.onclick = () => play(+b.dataset.i, true)));
++  };
++
++  /* s = { type: "hls"|"mp4", srcs: [...], subs, variants, poster } */
++  const mountVideo = (s, my, onFail) => {
++    stop();
++    const c = list[idx];
++    holder.innerHTML = `<video controls playsinline autoplay preload="auto"${s.poster || cur.poster ? ` poster="${esc(s.poster || cur.poster)}"` : ""}></video>
++      <button class="btn tp-unmute" hidden>🔊 Ativar som</button>`;
++    const v = $("video", holder), un = $(".tp-unmute", holder);
++    controls = mountControls(el, v, { resumeKey: c.trailer ? "" : cur.resumeKey, tracks: s.subs || [], variants: s.variants || null });
++    let started = false, k = 0;
++    const start = () => v.play().catch((err) => {
++      if (err && err.name === "NotAllowedError") { v.muted = true; v.play().catch(() => {}); un.hidden = false; }
++    });
++    un.onclick = () => { v.muted = false; un.hidden = true; v.play().catch(() => {}); };
++    v.addEventListener("playing", () => {
++      if (started) return; started = true;
++      if (!c.trailer) { Lib.addWatched(cur.item); cur.onStart && cur.onStart(); }
++      performance.mark("sx-watch-frame");
++      try { performance.measure("sx-watch", "sx-watch-open", "sx-watch-frame"); debug("assistir: primeiro quadro em", Math.round(performance.getEntriesByName("sx-watch").pop().duration), "ms via", c.label); } catch { /* sem medição */ }
++    });
++    v.addEventListener("ended", () => { if (my === token && !c.trailer && cur.next) upNext(); });
++    const load = (u) => {
++      if (hls) { hls.destroy(); hls = null; }
++      if (s.type === "hls" && window.Hls && Hls.isSupported()) {
++        hls = new Hls({ maxBufferLength: 30, maxMaxBufferLength: 60, capLevelToPlayerSize: true, startLevel: -1 });
++        controls.setHls(hls);
++        hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) fail(); });
++        hls.loadSource(u); hls.attachMedia(v); hls.on(Hls.Events.MANIFEST_PARSED, start);
++      } else { v.src = u; start(); }
++    };
++    const fail = () => {
++      if (my !== token || !holder.isConnected || started) return;
++      if (k < s.srcs.length) load(s.srcs[k++]); else onFail();
++    };
++    v.addEventListener("error", fail);
++    load(s.srcs[k++]);
++  };
++  const embed = (c, my) => {
++    if (my !== token) return;
++    stop();
++    holder.innerHTML = `<iframe src="${esc(TRAILER_SERVERS.embeds[0].url(encodeURIComponent(c.id)))}" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen title="${esc(cur.title)}"></iframe>`;
++    if (!c.trailer) { Lib.addWatched(cur.item); cur.onStart && cur.onStart(); }
++  };
++
++  async function play(i, manual = false) {
++    const my = ++token; idx = i; chips();
++    const c = list[i];
++    loading(c.type === "ia" ? "Abrindo no Internet Archive..." : "Conectando...");
++    const skip = () => {
++      if (my !== token || !holder.isConnected) return;
++      if (!manual && i + 1 < list.length) play(i + 1);
++      else error("Esta fonte não tocou agora.", "Escolha outra fonte embaixo.");
++    };
++    try {
++      if (c.type === "ia") {
++        const info = await IA.files(c.id);
++        if (my !== token || !holder.isConnected) return;
++        const f = info.files[0]; if (!f) throw new Error("sem arquivo");
++        // TODO: filmes do acervo divididos em partes tocam só a 1ª aqui (a ficha do clássico lista todas).
++        mountVideo({ type: "mp4", srcs: [f.url, ...(f.alts || [])], subs: info.subs }, my, skip);
++      } else {
++        const s = await resolveStream(c.id);
++        if (my !== token || !holder.isConnected) return;
++        if (s) mountVideo({ ...s, srcs: [s.src] }, my, () => embed(c, my));
++        else embed(c, my);
++      }
++    } catch { skip(); }
++  }
++
++  const upNext = () => {
++    const n = cur.next && cur.next(); if (!n) return;
++    const my = ++token; stop();
++    holder.innerHTML = `${n.poster ? `<img class="tp-poster" src="${esc(n.poster)}" alt="">` : ""}<div class="tp-load"><span>A seguir</span><strong>${esc(n.title)}</strong>
++      <div class="pc-bar" style="justify-content:center"><button class="btn hot" data-now>▶ Assistir agora</button><button class="btn" data-stop>Cancelar</button></div></div>`;
++    nextTimer = setTimeout(() => my === token && load(n), 6000);
++    $("[data-now]", holder).onclick = () => { clearTimeout(nextTimer); load(n); };
++    $("[data-stop]", holder).onclick = () => { clearTimeout(nextTimer); ++token; error("Episódio terminado."); };
++  };
++
++  async function load(c) {
++    const my = ++token;
++    cur = c; list = []; idx = -1; chips();
++    $(".player-bar .t", el).textContent = c.title;
++    performance.mark("sx-watch-open");
++    loading("Procurando versão completa grátis...");
++    list = await c.candidates;
++    if (my !== token || !holder.isConnected) return;
++    if (!list.length) { error("Não achamos este título para assistir grátis.", "Veja na ficha em quais serviços ele está."); return; }
++    if (list[0].trailer) toast("Não achamos versão completa grátis. Tocando o trailer.");
++    play(0);
++  }
++  load(cfg);
++}
++
+ /* ===== Controles do player (Fase 2) =====
+    Barra extra sob o vídeo: velocidade, qualidade, legendas, PiP e tela cheia;
+    atalhos de teclado; e "continuar de onde parou". Usado pelos filmes, TV e trailers. */
+@@ -1100,8 +1446,17 @@ RENDER.buscar = (view) => {
+     if (scope === "all" || scope === "movie") jobs.push(Cine.catalog("movie", "top", { search: q }).then((r) => ["Filmes", r]).catch(() => ["Filmes", []]));
+     if (scope === "all" || scope === "series") jobs.push(Cine.catalog("series", "top", { search: q }).then((r) => ["Séries", r]).catch(() => ["Séries", []]));
+     if (scope === "all" || scope === "ia") jobs.push(IA.search({ q, rows: 24 }).then((r) => ["Clássicos completos grátis", r.items]).catch(() => ["Clássicos", []]));
++    const tm = TMDB.enabled() && scope !== "ia" ? TMDB.multi(q).catch(() => []) : Promise.resolve([]);
+     const out = await Promise.all(jobs);
++    // TMDB (pt-BR) completa o Cinemeta: entra só o que o Cinemeta não trouxe (mesmo nome + ano).
++    const tmItems = await tm;
+     if (my !== token) return;
++    const have = new Set(out.flatMap(([, items]) => items.map((i) => norm(i.name) + "|" + String(i.year).slice(0, 4))));
++    const extra = tmItems.filter((i) => !have.has(norm(i.original) + "|" + i.year) && !have.has(norm(i.name) + "|" + i.year));
++    out.forEach((row) => {
++      const kind = row[0] === "Filmes" ? "movie" : row[0] === "Séries" ? "series" : null;
++      if (kind) row[1] = [...row[1], ...extra.filter((i) => i.kind === kind)];
++    });
+     out.forEach(([, items]) => remember(items));
+     const html = out.filter(([, i]) => i.length).map(([t, items]) => `<div class="section-label">${t}</div><div class="grid">${items.slice(0, 30).map((i) => cardHTML(i)).join("")}</div>`).join("");
+     results.innerHTML = html || `<div class="empty"><strong>Nada encontrado para “${esc(q)}”.</strong>Tente outro nome ou confira a ortografia.</div>`;
+@@ -1296,7 +1651,7 @@ async function openSettings(focus) {
+   const el = sheet(`<div class="pad form" style="padding-top:calc(env(safe-area-inset-top,0px) + 70px);padding-bottom:40px">
+     <h2 class="view-title">Ajustes</h2>
+     <section class="panel" id="tmdbPanel"><h3>Onde assistir</h3>
+-      <p class="note">Mostra em quais serviços cada filme e série está no Brasil (Netflix, Globoplay, Pluto TV e outros). Precisa de uma chave grátis do TMDB.</p>
++      <p class="note">Mostra em quais serviços cada filme e série está no Brasil (Netflix, Globoplay, Pluto TV e outros), deixa sinopses e episódios em português e amplia a busca para qualquer título. Precisa de uma chave grátis do TMDB.</p>
+       <ol class="steps">
+         <li>Crie uma conta grátis em <a class="link" href="https://www.themoviedb.org/signup" target="_blank" rel="noopener">themoviedb.org</a></li>
+         <li>Abra <a class="link" href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Configurações → API</a> e peça uma chave (uso pessoal)</li>
+@@ -1350,7 +1705,10 @@ function boot() {
+   document.addEventListener("pointerdown", warm, { passive: true, capture: true });
+   document.addEventListener("mouseover", warm, { passive: true });
+   applyKids();
+-  showTab(location.hash.slice(1) || "inicio");
++  // Link compartilhado: #titulo/movie/tt0111161 abre a ficha por cima do Início (o "voltar" fecha a ficha)
++  const route = location.hash.match(/^#titulo\/(movie|series|ia)\/(.+)$/);
++  showTab(route ? "inicio" : location.hash.slice(1) || "inicio");
++  if (route) openDetail(route[1], decodeURIComponent(route[2]));
+   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+ }
+ if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
+diff --git a/index.html b/index.html
+index 9dfcb36..cfcd0a0 100644
+--- a/index.html
++++ b/index.html
+@@ -22,7 +22,7 @@
+ <link rel="preconnect" href="https://fonts.googleapis.com">
+ <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+ <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Unbounded:wght@600;800&display=swap">
+-<link rel="stylesheet" href="app.css?v=12">
++<link rel="stylesheet" href="app.css?v=13">
+ </head>
+ <body>
+ <div id="app">
+@@ -56,6 +56,6 @@
+ <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+ 
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js" defer></script>
+-<script src="app.js?v=12" defer></script>
++<script src="app.js?v=13" defer></script>
+ </body>
+ </html>
+diff --git a/sw.js b/sw.js
+index 5455657..b3fcde0 100644
+--- a/sw.js
++++ b/sw.js
+@@ -1,5 +1,5 @@
+ /* Sinexflix: guarda a "casca" do app para abrir rápido e funcionar sem internet. */
+-const VERSION = "sinexflix-v2";
++const VERSION = "sinexflix-v3";
+ const SHELL = ["./", "index.html", "app.css", "app.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+ 
+ self.addEventListener("install", (e) => {
